@@ -1,0 +1,12 @@
+[Unit]
+Description=Gitohashi
+After=syslog.target
+
+[Service]
+ExecStart=/usr/local/bin/gitohashi
+ExecReload=/usr/bin/kill -HUP $MAINPID
+ExecStop=/usr/bin/killall gitohashi
+
+[Install]
+WantedBy=multi-user.target
+

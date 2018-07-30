@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="168.71mm" height="222.94mm" version="1.1" viewBox="0 0 168.71432 222.93897" xmlns="http://www.w3.org/2000/svg">
+	<defs>
+		<marker id="s" overflow="visible" orient="auto">
+			<path transform="matrix(.2 0 0 .2 1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="b" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="e" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="u" overflow="visible" orient="auto">
+			<path transform="matrix(.2 0 0 .2 1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="i" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="o" overflow="visible" orient="auto">
+			<path transform="matrix(.2 0 0 .2 1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="h" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="v" overflow="visible" orient="auto">
+			<path transform="matrix(.2 0 0 .2 1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="j" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="k" overflow="visible" orient="auto">
+			<path transform="matrix(-.4 0 0 -.4 -4 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="y" overflow="visible" orient="auto">
+			<path transform="matrix(-.4 0 0 -.4 -4 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="m" overflow="visible" orient="auto">
+			<path transform="matrix(-.4 0 0 -.4 -4 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="w" overflow="visible" orient="auto">
+			<path transform="matrix(-.4 0 0 -.4 -4 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="l" overflow="visible" orient="auto">
+			<path transform="matrix(-.4 0 0 -.4 -4 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="x" overflow="visible" orient="auto">
+			<path transform="matrix(-.4 0 0 -.4 -4 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="t" overflow="visible" orient="auto">
+			<path transform="matrix(.2 0 0 .2 1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="a" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="r" overflow="visible" orient="auto">
+			<path transform="matrix(.2 0 0 .2 1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="g" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="q" overflow="visible" orient="auto">
+			<path transform="matrix(.2 0 0 .2 1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="f" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="p" overflow="visible" orient="auto">
+			<path transform="matrix(.2 0 0 .2 1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="c" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<marker id="d" overflow="visible" orient="auto">
+			<path transform="matrix(-.2 0 0 -.2 -1.2 0)" d="m0 0 5-5-17.5 5 17.5 5z" fill-rule="evenodd" stroke="#000" stroke-width="1pt"/>
+		</marker>
+		<filter id="n" x="-.03516" y="-.026161" width="1.0703" height="1.0523" color-interpolation-filters="sRGB">
+			<feGaussianBlur stdDeviation="0.73415599"/>
+		</filter>
+	</defs>
+	<g transform="translate(-31.39 -59.723)">
+		<g>
+			<rect transform="matrix(3.1327 0 0 3.1327 -68.46 -129.96)" x="33.862" y="62.699" width="50.113" height="67.352" filter="url(#n)"/>
+			<rect x="36.155" y="64.782" width="156.99" height="210.99" fill="#f2f2f2"/>
+			<rect x="45.289" y="190.99" width="139.04" height="43.345" fill="#ffe6d5"/>
+		</g>
+		<path d="m151.59 213.22h-4.6833" fill="none" marker-end="url(#d)" stroke="#000" stroke-width="1.0557"/>
+		<g>
+			<rect x="88.738" y="195.82" width="55.534" height="36.28" fill="#4d4d4d"/>
+			<rect x="91.364" y="213.56" width="49.806" height="15.435" fill="#808080"/>
+			<text x="116.1095" y="225.51717" fill="#ffffff" font-family="'Open Sans'" font-size="12.446px" letter-spacing="0px" stroke-width="1.5557" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="116.1095" y="225.51717" fill="#ffffff" font-family="'Open Sans'" stroke-width="1.5557">libgit2</tspan></text>
+		</g>
+		<g fill="#4d4d4d">
+			<rect x="87.77" y="242.9" width="13.665" height="13.526"/>
+			<rect x="102.27" y="242.9" width="13.665" height="13.526"/>
+			<rect x="116.63" y="242.9" width="13.665" height="13.526"/>
+		</g>
+		<path d="m154.21 251.77 0.2929-35.734" fill="none" stroke="#000" stroke-width="1.0557"/>
+		<g>
+			<rect x="131.14" y="242.9" width="13.665" height="13.526" fill="#4d4d4d"/>
+			<text x="116.60323" y="207.03345" fill="#ffffff" font-family="'Open Sans'" font-size="9.6105px" letter-spacing="0px" stroke-width="1.2013" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="116.60323" y="207.03345" fill="#ffffff" font-family="'Open Sans'" stroke-width="1.2013">libjsongit2</tspan></text>
+			<text x="116.2832" y="264.41727" fill="#000000" font-family="'Open Sans'" font-size="7.4587px" letter-spacing="0px" stroke-width=".93234" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="116.2832" y="264.41727" font-family="'Open Sans'" stroke-width=".93234">your bare git repos</tspan></text>
+		</g>
+		<g fill="none" stroke="#000" stroke-width="1.0541px">
+			<path d="m94.467 228.35v12.596" marker-end="url(#c)" marker-start="url(#p)"/>
+			<path d="m109.34 228.51v12.596" marker-end="url(#f)" marker-start="url(#q)"/>
+			<path d="m123.35 228.51v12.596" marker-end="url(#g)" marker-start="url(#r)"/>
+			<path d="m138.31 228.35v12.596" marker-end="url(#a)" marker-start="url(#t)"/>
+		</g>
+		<g>
+			<text x="165.64291" y="220.55902" fill="#000000" font-family="'Open Sans'" font-size="5.0408px" letter-spacing="0px" stroke-width=".6301" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="165.64291" y="220.55902">gitolite</tspan><tspan x="165.64291" y="226.86002">config</tspan></text>
+			<rect x="45.78" y="95.972" width="138.74" height="82.813" fill="#e9c6af"/>
+			<text x="60.141151" y="107.237" fill="#000000" font-family="'Open Sans'" font-size="9.5373px" letter-spacing="0px" stroke-width="1.1922" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="60.141151" y="107.237">user</tspan><tspan x="60.141151" y="119.15858">app</tspan></text>
+			<rect x="85.264" y="154.37" width="61.776" height="18.114" fill="#806600"/>
+			<text x="116.2388" y="166.9118" fill="#ffffff" font-family="'Open Sans'" font-size="12.434px" letter-spacing="0px" stroke-width="1.5542" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="116.2388" y="166.9118" fill="#ffffff" font-family="'Open Sans'" stroke-width="1.5542">jg2_vhost</tspan></text>
+		</g>
+		<g fill="#a80">
+			<rect x="94.161" y="136.89" width="13.652" height="13.513"/>
+			<rect x="108.51" y="136.89" width="13.652" height="13.513"/>
+			<rect x="123" y="136.89" width="13.652" height="13.513"/>
+		</g>
+		<g fill="#ffffff" font-family="'Open Sans'" font-size="9.5493px" letter-spacing="0px" stroke-width="1.1937" text-anchor="middle" word-spacing="0px">
+			<text x="100.87365" y="146.6088" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="100.87365" y="146.6088" fill="#ffffff" font-family="'Open Sans'" stroke-width="1.1937">ctx</tspan></text>
+			<text x="115.16098" y="146.39603" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="115.16098" y="146.39603" fill="#ffffff" font-family="'Open Sans'" stroke-width="1.1937">ctx</tspan></text>
+			<text x="129.62732" y="146.39603" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="129.62732" y="146.39603" fill="#ffffff" font-family="'Open Sans'" stroke-width="1.1937">ctx</tspan></text>
+		</g>
+		<text x="91.786316" y="119.6458" fill="#000000" font-family="'Open Sans'" font-size="5.0359px" letter-spacing="0px" stroke-width=".62949" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="91.786316" y="119.6458" font-family="'Open Sans'" stroke-width=".62949">urlpath in</tspan></text>
+		<text x="133.3802" y="103.92596" fill="#000000" font-family="'Open Sans'" font-size="5.0359px" letter-spacing="0px" stroke-width=".62949" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="133.3802" y="103.92596" font-family="'Open Sans'" stroke-width=".62949">HTML + JSON out into</tspan></text>
+		<g fill="none" stroke="#000">
+			<g stroke-width=".63048">
+				<path d="m120.32 126.71 9.5382 9.8562 14.307-21.143" marker-end="url(#x)" marker-start="url(#l)"/>
+				<path d="m105.78 126.74 9.5382 9.8562 14.307-21.143" marker-end="url(#w)" marker-start="url(#m)"/>
+				<path d="m91.554 126.66 9.5383 9.8562 14.307-21.143" marker-end="url(#y)" marker-start="url(#k)"/>
+			</g>
+			<g stroke-width=".62949px">
+				<path d="m100.95 150.19v4.4964" marker-end="url(#j)" marker-start="url(#v)"/>
+				<path d="m114.88 149.97v4.4964" marker-end="url(#h)" marker-start="url(#o)"/>
+				<path d="m129.27 149.74v4.4964" marker-end="url(#i)" marker-start="url(#u)"/>
+			</g>
+			<path d="m159.44 163.02h-12.596" marker-end="url(#e)" stroke-width="1.055"/>
+		</g>
+		<text x="167.9082" y="160.75" fill="#000000" font-family="'Open Sans'" font-size="5.0408px" letter-spacing="0px" stroke-width=".6301" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="167.9082" y="160.75">template</tspan><tspan x="167.9082" y="167.05099">HTML</tspan></text>
+		<path d="m116.44 170.67v22.542" fill="none" marker-end="url(#b)" marker-start="url(#s)" stroke="#000" stroke-width="1.0541px"/>
+		<g fill="#000000" font-family="'Open Sans'" letter-spacing="0px" text-anchor="middle" word-spacing="0px">
+			<text x="133.12012" y="109.48351" font-size="5.0359px" stroke-width=".62949" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="133.12012" y="109.48351" font-family="'Open Sans'" stroke-width=".62949">chunked memory buffers</tspan></text>
+			<text x="75.911415" y="82.317596" font-size="13.259px" stroke-width="1.6574" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="75.911415" y="82.317596" fill="#000000" font-family="'Open Sans'" stroke-width="1.6574">libjsongit2</tspan></text>
+			<text x="58.847652" y="220.49406" font-size="6.5417px" stroke-width=".81771" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="58.847652" y="220.49406">this</tspan><tspan x="58.847652" y="228.67117">library</tspan></text>
+			<text x="165.30663" y="202.23048" font-size="5.0408px" stroke-width=".6301" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="165.30663" y="202.23048">gitweb</tspan><tspan x="165.30663" y="208.53148">config</tspan></text>
+		</g>
+		<rect x="63.847" y="197.84" width="17.768" height="13.526" fill="#4d4d4d"/>
+		<text x="72.539955" y="206.56897" fill="#ffffff" font-family="'Open Sans'" font-size="6.025px" letter-spacing="0px" stroke-width=".75313" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="72.539955" y="206.56897" fill="#ffffff" font-family="'Open Sans'" stroke-width=".75313">cache</tspan></text>
+		<path d="m154.65 216.44-3.4731-3.3878" fill="none" stroke="#000" stroke-width="1.0557"/>
+		<rect x="147.82" y="242.69" width="13.665" height="13.526" fill="#806600"/>
+		<text x="155.05472" y="248.86899" fill="#ffff00" font-family="'Open Sans'" font-size="2.9714px" letter-spacing="0px" stroke-width=".37142" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="155.05472" y="248.86899">gitolite-</tspan><tspan x="155.05472" y="252.58321">admin</tspan></text>
+	</g>
+</svg>

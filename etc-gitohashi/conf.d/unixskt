@@ -1,0 +1,127 @@
+# you should create one file like this per vhost in /etc/gitohashi/conf.d
+
+{
+	"vhosts": [{
+		# this has no special meaning but needs to be unique
+                "name":              "unixskt",
+                "unix-socket":       1,
+                # multiple vhosts can exist with different unix skt names
+		"interface":	     "/var/run/gitohashi-unixskt",
+		# required for avatar cache
+                "enable-client-ssl": "on",
+
+		"mounts": [
+			{
+				# the dynamic html + json from libjsongit2
+				"mountpoint": "/git",
+				"origin": "callback://gitohashi"
+			},
+			{
+				# static assets like js, css, fonts
+				"mountpoint": "/git/_gitohashi",
+				"origin": "file:///usr/local/share/gitohashi/assets",
+				"cache-max-age": "7200",
+				"cache-reuse": "1",
+				"cache-revalidate": "0",
+				"cache-intermediaries": "0"
+			},
+			{
+				# semi-static cached avatar icons
+				"mountpoint": "/git/avatar",
+				"origin": "callback://avatar-proxy",
+				"cache-max-age": "2400",
+				"cache-reuse": "1",
+				"cache-revalidate": "0",
+				"cache-intermediaries": "0"
+			}
+		],
+		
+		#
+		# these headers, which will be sent on every transaction, make
+		# recent browsers definitively ban any external script sources,
+		# no matter what might manage to get injected later in the
+		# page.  It's a last line of defence against any successful XSS.
+		#
+
+		"headers": [{
+		        "content-security-policy": "default-src 'none'; img-src 'self' data: https://travis-ci.org https://api.travis-ci.org https://ci.appveyor.com https://scan.coverity.com; script-src 'self'; font-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none';",
+		        "x-content-type-options": "nosniff",
+		        "x-xss-protection": "1; mode=block",
+		        "x-frame-options": "deny",
+		        "referrer-policy": "no-referrer"
+		}],
+
+		"ws-protocols": [
+
+		{ "gitohashi": {
+			# template HTML to use for this vhost.  You'd normally
+			# copy this to gitohashi-vhostname.html and modify it
+			# to show the content, logos, links, fonts, css etc for
+			# your vhost.  It's not served directly but read from
+			# the filesystem.  Although it's cached in memory by
+			# gitohashi, it checks for changes and reloads if
+			# changed automatically.
+			#
+			# Putting logos etc as svg in css is highly recommended,
+			# like fonts these can be transferred once with a loose
+			# caching policy.  So in practice they cost very little,
+			# and allow the browser to compose the page without
+			# delay.
+			#
+			"html-file":	 "/usr/local/share/gitohashi/templates/gitohashi-example.html",
+			#
+			# vpath required at start of links into this vhost's
+			# gitohashi content for example if an external http
+			# server is proxying us, and has been told to direct
+			# URLs starting "/git" to us, this should be set to
+			# "/git/" so URLs we generate referring to our own pages
+			# can work.
+			#
+			"vpath":	 "/git/",
+			#
+			# base directory for the bare git repos we might serve
+			#
+			"repo-base-dir": "/srv/repositories",
+			#
+			# allow serving git repos that have gitolite read ACL
+			# rights for this user.  Set to "@all" to serve all
+			# available repos (except gitolite-admin, which will
+			# never be served) The recommended convention is a
+			# virtual user "v-vhostname" in gitolite config and here
+			# to mark which repos should be made available on this
+			# vhost.
+			#
+			"acl-user":	 "@all",
+			#
+			# url mountpoint for the avatar cache
+			#
+			"avatar-url":	 "/git/avatar/",
+			#
+			# libjsgit2 JSON cache... this
+			# should not be directly served
+			#
+			"cache-base":	"/var/cache/libjsongit2",
+			#
+			# restrict the JSON cache size
+			# to 100MB
+			#
+			"cache-size":   "100000000",
+			#
+			# optional flags, b0 = 1 = blog mode
+			#
+			"flags": 0
+			#"blog-repo-name":	"myrepo"
+		},
+		"avatar-proxy": {
+			"remote-base": "https://www.gravatar.com/avatar/",
+			#
+			# this dir is served via avatar-proxy
+			#
+			"cache-dir": "/var/cache/libjsongit2"
+		}
+	}
+	]
+	}
+	]
+}
+

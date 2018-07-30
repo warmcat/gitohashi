@@ -1,0 +1,14 @@
+# these are the gitohashi server global settings
+#
+# stuff related to each vhosts should go in one
+# file per vhost in ./conf.d/
+
+{
+  "global": {
+   "uid": "48", # after init, run as apache user
+   "gid": "48", # after init, run as apache group
+   "server-string": "gitohashi",
+   "init-ssl": "yes"
+ }
+}
+

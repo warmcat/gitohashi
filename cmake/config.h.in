@@ -1,0 +1,2 @@
+#cmakedefine JG2_HAVE_ARCHIVE_H
+#cmakedefine JG2_HAVE_BLAME_MAILMAP

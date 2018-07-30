@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="184.2mm" height="124.56mm" version="1.1" viewBox="0 0 184.20392 124.56111" xmlns="http://www.w3.org/2000/svg">
+	<defs>
+		<filter id="a" x="-.033749" y="-.051576" width="1.0675" height="1.1032" color-interpolation-filters="sRGB">
+			<feGaussianBlur stdDeviation="1.3371908"/>
+		</filter>
+	</defs>
+	<g transform="translate(-51.252 -98.979)">
+		<g>
+			<rect transform="matrix(1.8146 0 0 1.8146 304.67 -44.961)" x="-136.45" y="82.532" width="95.092" height="62.224" filter="url(#a)"/>
+			<rect x="56.116" y="103.84" width="172.56" height="112.91" fill="#f9f9f9"/>
+			<path d="m146.72 110.13v101.38h62.656v-13.961h-49.092v-43.044h49.092v-44.374z" fill="#5f8dd3"/>
+		</g>
+		<path d="m164.24 156.94v37.209h51.133v-6.3616h-39.314v-24.726h39.314v-6.1215z" fill="#a80" fill-opacity=".86364"/>
+		<rect x="179.6" y="165.58" width="43.951" height="8.162" fill="#f60" fill-opacity=".96281"/>
+		<rect x="179.6" y="176.38" width="43.951" height="8.162" fill="#f60" fill-opacity=".96281"/>
+		<g fill="#ffffff" font-family="'Open Sans'" letter-spacing="0px" text-anchor="middle" word-spacing="0px">
+			<text x="179.29561" y="119.79851" font-size="7.0215px" stroke-width=".87769" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="179.29561" y="119.79851" fill="#ffffff" stroke-width=".87769">Template HTML</tspan></text>
+			<text x="192.04271" y="161.17987" font-size="3.7114px" stroke-width=".46393" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="192.04271" y="161.17987" fill="#ffffff" stroke-width=".46393">dynamic JSON</tspan></text>
+			<text x="201.6248" y="170.64967" font-size="3.4405px" stroke-width=".43006" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="201.6248" y="170.64967" fill="#ffffff" stroke-width=".43006">cached or dynamic JSON</tspan></text>
+			<text x="201.53995" y="181.60657" font-size="3.4405px" stroke-width=".43006" text-align="center" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="201.53995" y="181.60657" fill="#ffffff" stroke-width=".43006">cached or dynamic JSON</tspan></text>
+		</g>
+		<rect x="62.953" y="109.33" width="63.146" height="101.85" fill="#f60" fill-opacity=".96471"/>
+		<g fill="#ffffff" font-family="'Open Sans'" letter-spacing="0px" word-spacing="0px">
+			<text x="93.898964" y="119.98466" font-size="7.0215px" stroke-width=".87769" text-align="center" text-anchor="middle" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="93.898964" y="119.98466" fill="#ffffff" stroke-width=".87769">"naked" repo file</tspan></text>
+			<g font-size="3.7114px" stroke-width=".46393">
+				<text x="71.254112" y="129.47945" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="71.254112" y="129.47945"><tspan font-weight="bold" stroke-width=".46393">/patch/</tspan></tspan><tspan x="71.254112" y="134.11874">text/plain raw diff</tspan><tspan x="71.254112" y="138.75803"/></text>
+				<text x="70.965675" y="143.79506" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="70.965675" y="143.79506"><tspan font-weight="bold" stroke-width=".46393">/plain/</tspan></tspan><tspan x="70.965675" y="148.43436">various assets served from</tspan><tspan x="70.965675" y="153.07364">inside the repo directly</tspan><tspan x="70.965675" y="157.71294"/></text>
+				<text x="70.626152" y="162.29762" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="70.626152" y="162.29762"><tspan font-weight="bold" stroke-width=".46393">/snapshot/</tspan></tspan><tspan x="70.626152" y="166.93692">archives generated from a</tspan><tspan x="70.626152" y="171.5762">specific repo and ref</tspan><tspan x="70.626152" y="176.2155"/></text>
+			</g>
+			<text x="93.580284" y="204.09814" font-size="3.4405px" stroke-width=".43006" text-align="center" text-anchor="middle" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="93.580284" y="204.09814" fill="#ffffff" stroke-width=".43006">... all cacheable</tspan></text>
+			<text x="179.02235" y="146.77275" font-size="3.4405px" stroke-width=".43006" text-align="center" text-anchor="middle" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="179.02235" y="146.77275" fill="#ffffff" stroke-width=".43006">never cached</tspan></text>
+		</g>
+		<text x="136.3925" y="163.42026" fill="#000000" font-family="'Open Sans'" font-size="3.841px" letter-spacing="0px" stroke-width=".48012" text-align="center" text-anchor="middle" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="136.3925" y="163.42026" stroke-width=".48012">...or...</tspan></text>
+		<text x="157.53709" y="128.51778" fill="#ffffff" font-family="'Open Sans'" font-size="3.7114px" letter-spacing="0px" stroke-width=".46393" word-spacing="0px" style="font-feature-settings:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;line-height:1.25" xml:space="preserve"><tspan x="157.53709" y="128.51778"><tspan font-weight="bold" stroke-width=".46393">/everything else/</tspan></tspan><tspan x="157.53709" y="133.15707">Static HTML + dynamic</tspan><tspan x="157.53709" y="137.79636">JSON "sandwich"</tspan><tspan x="157.53709" y="142.43565"/></text>
+	</g>
+</svg>

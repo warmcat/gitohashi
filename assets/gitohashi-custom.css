@@ -1,0 +1,44 @@
+
+@font-face {
+  font-family: 'Inconsolata';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Inconsolata Regular'), url('/git/_gitohashi/inconsolata.ttf') format('truetype');
+}
+body {
+	font-family: "Open Sans", Roboto, Arial, Helvetica, sans-serif;
+	font-size: 15px;
+	padding-bottom:0;
+	padding-top:0;
+	margin-bottom:0;
+	margin-top:0;
+}
+p {
+	font-family: "Open Sans", Roboto, Arial, Helvetica, sans-serif;
+	font-size: 15px;
+}
+pre {
+	font-family: "Inconsolata", "mono";
+	font-size: 14px;
+}
+
+tr.repobar {
+	background-color: #dcf4dc;
+}
+
+div.tabs li.selected {
+	background: #dcf4dc;
+	color: #333;
+}
+
+div.tabs li {
+	background: #c0d8c0;
+}
+
+div.tabs li:hover {
+	background: #cce8cc;
+}
+
+div.tabs a {
+	color: #00c;
+}
