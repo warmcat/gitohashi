@@ -10,7 +10,7 @@ language: generic
 
 install: if [ "$TRAVIS_OS_NAME" == "linux" ]; then sudo apt-get update -qq ; sudo apt-get install -y -qq libgit2-0 libgit2-dev libarchive13 libarchive-dev ; fi ; if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew update; brew install libgit2 ; fi
 
-script: git clone https://libwebsockets.org:444/repo/libwebsockets && cd libwebsockets && mkdir build && cd build && if [ "$TRAVIS_OS_NAME" = "osx" ] ; then cmake -DOPENSSL_ROOT_DIR="/usr/local/opt/openssl" .. ; else cmake .. ; fi && cmake --build . && sudo make install && cd ../.. && mkdir build && cd build && if [ "$TRAVIS_OS_NAME" = "osx" ] ; then CFLAGS="-I/usr/local/opt/openssl/include" cmake -DCMAKE_REQUIRED_INCLUDES="/usr/local/opt/openssl/include" $CMAKE_ARGS .. ; CFLAGS="-I/usr/local/opt/openssl/include" cmake --build . ; else cmake $CMAKE_ARGS .. ; cmake --build . ; fi && sudo make install
+script: git clone https://libwebsockets.org:444/repo/libwebsockets && cd libwebsockets && mkdir build && cd build && if [ "$TRAVIS_OS_NAME" = "osx" ] ; then cmake -DLWS_FOR_GITOHASHI=1 -DOPENSSL_ROOT_DIR="/usr/local/opt/openssl" .. ; else cmake .. -DLWS_FOR_GITOHASHI=1 ; fi && cmake --build . && sudo make install && cd ../.. && mkdir build && cd build && if [ "$TRAVIS_OS_NAME" = "osx" ] ; then CFLAGS="-I/usr/local/opt/openssl/include" cmake -DCMAKE_REQUIRED_INCLUDES="/usr/local/opt/openssl/include" $CMAKE_ARGS .. ; CFLAGS="-I/usr/local/opt/openssl/include" cmake --build . ; else cmake $CMAKE_ARGS .. ; cmake --build . ; fi && sudo make install
 
 sudo: required
 dist: trusty

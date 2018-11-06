@@ -331,10 +331,6 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
 		lws_snprintf(pss->path, sizeof(pss->path), "%s/%c/%c/%s",
 			     vhd->cache_dir, p[0], p[1], p);
 
-		lws_set_timer_usecs(wsi, LWS_USEC_PER_SEC);
-
-		return 0;
-
 		/* fallthru */
 
 	case LWS_CALLBACK_HTTP_WRITEABLE:
@@ -437,7 +433,8 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
 		return 0;
 
 	case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
-		create_waiting_client_requests(vhd);
+		if (vhd)
+			create_waiting_client_requests(vhd);
 		break;
 
 	default:

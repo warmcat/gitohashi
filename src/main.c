@@ -105,7 +105,8 @@ void sigint_handler(int sig)
 
 int main(int argc, const char **argv)
 {
-	int n = 0, logs = LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_THREAD;
+	int n = 0, logs = LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE
+			/* | LLL_THREAD */;
 	struct lws_context *context;
 	const char *p;
 
@@ -114,7 +115,7 @@ int main(int argc, const char **argv)
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
 
-	lws_set_log_level(logs, NULL);
+	lws_set_log_level(logs, lwsl_emit_stderr_notimestamp);
 
 	lwsl_user("Gitohashi - "
 		  "Copyright (C) 2018 Andy Green <andy@warmcat.com>\n");

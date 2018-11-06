@@ -31,7 +31,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 
-#define lp_to_rei(p, _n) list_ptr_container(p, struct repo_entry_info, _n)
+#define lp_to_rei(p, _n) lws_list_ptr_container(p, struct repo_entry_info, _n)
 
 static jg2_job jobs[] = {
 	job_reflist,
@@ -44,6 +44,7 @@ static jg2_job jobs[] = {
 	job_snapshot,
 	job_blame,
 	job_blog,
+	job_search,
 };
 
 jg2_job
@@ -113,21 +114,20 @@ job_spool_from_cache(struct jg2_ctx *ctx)
 
 /* requires vhost lock */
 
-void
-__jg2_job_hash_visible_repos(struct jg2_vhost *vh, jg2_md5_context md5_ctx,
-			     const char *acl_user)
+static void
+__jg2_job_hash_visible_repos(struct jg2_ctx *ctx)
 {
-	list_ptr lp = vh->rei_head;
+	struct jg2_vhost *vh = ctx->vhost;
+	lws_list_ptr lp = vh->repodir->rei_head;
 
 	while (lp) {
 		struct repo_entry_info *rei = lp_to_rei(lp, next);
 		char *p = (char *)(rei + 1);
 
-		if (!__repo_check_acl(vh, p, vh->cfg.acl_user) ||
-		    (acl_user && !__repo_check_acl(vh, p, acl_user)))
-			vh->cfg.md5_upd(md5_ctx, (unsigned char *)p, strlen(p));
+		if (!jg2_acl_check(ctx, p, ctx->acl_user))
+			vh->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)p, strlen(p));
 
-		list_ptr_advance(lp);
+		lws_list_ptr_advance(lp);
 	}
 }
 
@@ -151,11 +151,20 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 	ctx->vhost->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)&je, 2);
 
 	/* item 2: the low 32-bits of the count */
-	ctx->vhost->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)&c32, 4);
+	if (job != JG2_JOB_SEARCH_TRIE) {
+		ctx->vhost->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)&c32, 4);
+
+		if (ctx->sr.e[JG2_PE_SEARCH])
+			ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
+				(unsigned char *)ctx->sr.e[JG2_PE_SEARCH],
+				strlen(ctx->sr.e[JG2_PE_SEARCH]));
+	}
 
 	/* item 3: the repo refs hash (if we are affiliated with a repo) */
 	if (ctx->jrepo) {
-		ctx->vhost->cfg.md5_upd(ctx->md5_ctx, ctx->jrepo->md5_refs,
+		if (job != JG2_JOB_SEARCH_TRIE)
+			ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
+					   ctx->jrepo->md5_refs,
 					   sizeof(ctx->jrepo->md5_refs));
 
 	/* item 4: the repo filepath (if we are affiliated with a repo) */
@@ -170,7 +179,7 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 					strlen(ctx->sr.e[JG2_PE_MODE]));
 
 	/* item 6: the path part inside the repo, if any */
-		if (ctx->sr.e[JG2_PE_PATH])
+		if (job != JG2_JOB_SEARCH_TRIE && ctx->sr.e[JG2_PE_PATH])
 			ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
 					(unsigned char *)ctx->sr.e[JG2_PE_PATH],
 					strlen(ctx->sr.e[JG2_PE_PATH]));
@@ -205,18 +214,18 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 
 	/* item 8: repo info */
 
-		if (ctx->sr.e[JG2_PE_NAME]) {
-			list_ptr lp = ctx->vhost->rei_head;
+		if (job != JG2_JOB_SEARCH_TRIE && ctx->sr.e[JG2_PE_NAME]) {
+			lws_list_ptr lp = ctx->vhost->repodir->rei_head;
 
 			while (lp) {
 				struct repo_entry_info *rei = lp_to_rei(lp, next);
 				char *p = (char *)(rei + 1);
-				size_t n = JG2_ARRAY_SIZE(rei->conf_len);
+				size_t n = LWS_ARRAY_SIZE(rei->conf_len);
 
 				if (!strcmp(p, ctx->sr.e[JG2_PE_NAME]))
 					n = 0;
 
-				for (; n < JG2_ARRAY_SIZE(rei->conf_len); n++) {
+				for (; n < LWS_ARRAY_SIZE(rei->conf_len); n++) {
 					if (!rei->conf_len[n])
 						continue;
 
@@ -226,7 +235,7 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 					p += rei->conf_len[n];
 				}
 
-				list_ptr_advance(lp);
+				lws_list_ptr_advance(lp);
 			}
 		}
 
@@ -252,8 +261,7 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 			ctx->vhost->repodir->hexoid_gitolite_conf,
 			sizeof(ctx->vhost->repodir->hexoid_gitolite_conf) - 1);
 
-		__jg2_job_hash_visible_repos(ctx->vhost, ctx->md5_ctx,
-					     ctx->acl_user);
+		__jg2_job_hash_visible_repos(ctx);
 	}
 
 	ctx->vhost->cfg.md5_fini(ctx->md5_ctx, ctx->job_hash);
@@ -318,12 +326,20 @@ jg2_ctx_set_job(struct jg2_ctx *ctx, jg2_job_enum job, const char *hex_oid,
 	if (!ctx->vhost->cfg.json_cache_base)
 		return;
 
+	/* don't cache autocomplete */
+	if (ctx->sr.e[JG2_PE_MODE] && !strcmp(ctx->sr.e[JG2_PE_MODE], "ac"))
+		return;
+
 	pthread_mutex_lock(&ctx->vhost->lock); /* ================ vhost lock */
 	__jg2_job_compute_cache_hash(ctx, job, count, md5_hex);
 
-	if (__jg2_cache_query(ctx, md5_hex, &ctx->fd_cache, ctx->cache,
-			      sizeof(ctx->cache) - 1) ==
-					      	      JG2_CACHE_QUERY_EXISTS) {
+	ctx->existing_cache_pos = 0;
+	if (lws_diskcache_query(ctx->vhost->cachedir->dcs,
+				ctx->flags & JG2_CTX_FLAG_BOT, md5_hex,
+				&ctx->fd_cache, ctx->cache,
+				sizeof(ctx->cache) - 1,
+				&ctx->existing_cache_size) ==
+						LWS_DISKCACHE_QUERY_EXISTS) {
 		ctx->job = job_spool_from_cache;
 		if (!ctx->sr.e[JG2_PE_MODE] || !jg2_job_naked(ctx)) {
 			pthread_mutex_unlock(&ctx->vhost->lock); /*vhost unlock */
@@ -370,7 +386,7 @@ jg2_get_repo_config(git_repository *gr, struct repo_entry_info *rei, char *p)
 
 	len = 0;
 
-	for (n = 0; n < (int)JG2_ARRAY_SIZE(items); n++) {
+	for (n = 0; n < (int)LWS_ARRAY_SIZE(items); n++) {
 		const char *str;
 		int slen, m;
 
@@ -400,23 +416,6 @@ post:
 	return len;
 }
 
-const struct repo_entry_info *
-jg2_lookup_repo_config(struct jg2_vhost *vh, const char *repo_name)
-{
-	struct repo_entry_info *rei;
-	list_ptr lp = vh->rei_head;
-
-	while (lp) {
-		rei = lp_to_rei(lp, next);
-
-		if (!strcmp((const char *)(rei + 1), repo_name))
-			return rei;
-		list_ptr_advance(lp);
-	}
-
-	return NULL;
-}
-
 const char *
 jg2_rei_string(const struct repo_entry_info *rei, enum rei_string_index n)
 {
@@ -425,9 +424,6 @@ jg2_rei_string(const struct repo_entry_info *rei, enum rei_string_index n)
 	if (n == REI_STRING_NAME)
 		return p;
 	p += rei->name_len;
-	if (n == REI_STRING_ACL)
-		return p;
-	p += rei->acl_len;
 	if (n == REI_STRING_CONFIG_DESC)
 		return p;
 	p += rei->conf_len[0];
@@ -520,6 +516,7 @@ meta_header(struct jg2_ctx *ctx)
 {
 	const char *av = "//www.gravatar.com/avatar/";
 	const struct repo_entry_info *rei = NULL;
+	struct jg2_repodir *rd = ctx->vhost->repodir;
 	int f = 0, m = 0;
 	char pure[128];
 	size_t n;
@@ -540,10 +537,6 @@ meta_header(struct jg2_ctx *ctx)
 	f |= 2;
 #endif
 	f |= ctx->blog_mode << 2;
-
-	if (ctx->sr.e[JG2_PE_NAME])
-		rei = jg2_lookup_repo_config(ctx->vhost,
-					     ctx->sr.e[JG2_PE_NAME]);
 
 	/*
 	 * We always issue this first section fresh.  That allows it to
@@ -568,7 +561,12 @@ meta_header(struct jg2_ctx *ctx)
 
 	if (ctx->sr.e[JG2_PE_NAME])
 		CTX_BUF_APPEND("\"reponame\":\"%s\",\n",
-					ctx->sr.e[JG2_PE_NAME]);
+				ctx->sr.e[JG2_PE_NAME]);
+
+	pthread_mutex_lock(&rd->lock); /* ====================== repodir lock */
+
+	if (ctx->sr.e[JG2_PE_NAME])
+		rei = __jg2_repodir_repo(rd, ctx->sr.e[JG2_PE_NAME]);
 
 	if (!ctx->jrepo || !ctx->jrepo->repo || !rei)
 		goto post;
@@ -592,6 +590,7 @@ meta_header(struct jg2_ctx *ctx)
 	}
 
 post:
+	pthread_mutex_unlock(&rd->lock); /* ------------------ repodir unlock */
 	CTX_BUF_APPEND("\"f\":%d,\n\"items\": [\n", f);
 
 	ctx->cache_written_p = ctx->p;
@@ -627,7 +626,8 @@ void
 meta_trailer(struct jg2_ctx *ctx, const char *term)
 {
 	struct timeval t2;
-	int pc = 0, pc1 = 0;
+	int pc = 0, pc1 = 0, idx;
+	uint32_t files, done;
 
 	if (lws_ptr_diff(ctx->end, ctx->p) < JG2_RESERVE_SEAL)
 		lwsl_err("%s: JG2_RESERVE_SEAL %d but only %d left\n", __func__,
@@ -676,10 +676,25 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 	if (ctx->vhost->etag_tries)
 		pc1 = (ctx->vhost->etag_hits * 100) / ctx->vhost->etag_tries;
 
-	if (!jg2_job_naked(ctx))
-		CTX_BUF_APPEND("],\"g\":%8lu,\"chitpc\":%8u,\"ehitpc\":%8u}\n\n",
+	if (!ctx->no_rider && !jg2_job_naked(ctx)) {
+		CTX_BUF_APPEND("],\"g\":%8lu,\"chitpc\":%8u,\"ehitpc\":%8u",
 			       (unsigned long)(timeval_us(&t2) -
 			       timeval_us(&ctx->tv_gen)), pc, pc1);
+
+		if (ctx->sr.e[JG2_PE_NAME]) {
+
+			idx = job_search_check_indexed(ctx, &files, &done);
+
+			CTX_BUF_APPEND(",\n \"indexed\":%d\n", idx);
+
+			if (idx == LWS_DISKCACHE_QUERY_ONGOING)
+				CTX_BUF_APPEND(", \"index_files\":%d,\n"
+					       "\"index_done\":%d\n",
+						files, done);
+		}
+
+		CTX_BUF_APPEND("}\n\n");
+	}
 
 	ctx->started = ctx->meta = 0;
 }
@@ -702,9 +717,10 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
  */
 
 int
-jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used)
+jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
+		char *outlive)
 {
-	const char *mode, *vid, *reponame;
+	const char *mode, *vid, *reponame, *search;
 	size_t m = 0, left = len - 1;
 	struct timeval t2;
 	char id[64];
@@ -719,11 +735,12 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used)
 	ctx->len = len;
 	ctx->end = (char *)buf + len - 1;
 	ctx->final = 0;
-
+	ctx->outlive = outlive;
 
 	reponame = jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0);
 	mode = jg2_ctx_get_path(ctx, JG2_PE_MODE, NULL, 0);
 	vid = jg2_ctx_get_path(ctx, JG2_PE_VIRT_ID, id, sizeof(id));
+	search = jg2_ctx_get_path(ctx, JG2_PE_SEARCH, NULL, 0);
 
 	switch (ctx->html_state) {
 
@@ -740,7 +757,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used)
 
 		CTX_BUF_APPEND("<meta name=\"Description\" content=\""
 			       "generated-by:gitohashi git web interface, "
-			       "repository: %s, mode: %s, path: %s\">",
+			       "repository: %s, mode: %s, path: %s, rev: %s\">",
 			       reponame ? reponame : "-", mode ? mode : "-",
 			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) ?
 			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) : "-",
@@ -800,6 +817,18 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used)
 		} else if (mode && !strcmp(mode, "blog")) {
 			ctx->job_state = EMIT_STATE_BLOG;
 			jg2_ctx_set_job(ctx, JG2_JOB_BLOG,
+					vid, 0, JG2_JOB_FLAG_FINAL);
+		} else if (mode && !strcmp(mode, "ac")) { /* autocomplete */
+			ctx->job_state = EMIT_STATE_SEARCH;
+			jg2_ctx_set_job(ctx, JG2_JOB_SEARCH,
+					vid, 0, JG2_JOB_FLAG_FINAL);
+		} else if (mode && !strcmp(mode, "fp")) { /* filepath */
+			ctx->job_state = EMIT_STATE_SEARCH;
+			jg2_ctx_set_job(ctx, JG2_JOB_SEARCH,
+					vid, 0, JG2_JOB_FLAG_FINAL);
+		} else if (mode && !strcmp(mode, "search")) {
+			ctx->job_state = EMIT_STATE_SEARCH;
+			jg2_ctx_set_job(ctx, JG2_JOB_SEARCH,
 					vid, 0, JG2_JOB_FLAG_FINAL);
 #if LIBGIT2_HAS_BLAME
 		} else if (mode && !strcmp(mode, "blame")) {
@@ -864,9 +893,19 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used)
 
 		cache_write(ctx, job_in);
 
-		ctx->partway = !ctx->final;
+		/*
+		 * final: 0 = still going, 1 = final, 2 = final send but stay
+		 * 		on job state
+		 */
+		ctx->partway = ctx->final != 1;
 		if (!ctx->meta_last_job)
 			ctx->final = 0;
+
+		if (ctx->final == 2) {
+			*used = lws_ptr_diff(ctx->p, ctx->buf);
+
+			return 1;
+		}
 
 		if (ctx->partway)
 			break;
@@ -884,30 +923,41 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used)
 			 * after processing the ls for a tree, we might have
 			 * found a doc file we want to show inline additionally
 			 */
-			if (ctx->inline_filename[0] &&
-			    ctx->sr.e[JG2_PE_PATH] != ctx->inline_filename) {
+			if (ctx->inline_filename[0] && !ctx->did_inline) {
 				/* we found a document we want to show inline */
-
-				ctx->sr.e[JG2_PE_PATH] =
-						ctx->inline_filename;
-				// lwsl_notice("%s: inline %s\n", __func__,
-				//		ctx->sr.e[JG2_PE_PATH]);
+				lwsl_err("doing inline %s %s\n",
+						ctx->inline_filename,
+						ctx->sr.e[JG2_PE_PATH]);
 
 				ctx->job_state = EMIT_STATE_TREE;
 				jg2_ctx_set_job(ctx, JG2_JOB_TREE,
 						vid, 0, JG2_JOB_FLAG_CHAINED |
 						JG2_JOB_FLAG_FINAL);
 
+				ctx->meta = 1;
 				break;
 			}
 
-			if (ctx->blame_after_tree &&
+			if (search && !ctx->did_sat && ctx->sr.e[JG2_PE_PATH]) {
+lwsl_err("doing chained search %s %s\n", search, ctx->sr.e[JG2_PE_PATH]);
+				ctx->job_state = EMIT_STATE_TREE;
+				jg2_ctx_set_job(ctx, JG2_JOB_SEARCH,
+						vid, 0, JG2_JOB_FLAG_CHAINED |
+						JG2_JOB_FLAG_FINAL);
+				ctx->did_sat = 1;
+				ctx->meta = 1;
+				break;
+			}
+
+			if (ctx->blame_after_tree && !ctx->did_bat &&
 			    ctx->sr.e[JG2_PE_PATH] != ctx->inline_filename) {
+				lwsl_err("doing blame %s %s\n", search, ctx->sr.e[JG2_PE_PATH]);
 				ctx->job_state = EMIT_STATE_BLAME;
 				jg2_ctx_set_job(ctx, JG2_JOB_BLAME,
 						vid, 0, JG2_JOB_FLAG_CHAINED |
 						JG2_JOB_FLAG_FINAL);
-
+				ctx->did_bat = 1;
+				ctx->meta = 1;
 				break;
 			}
 

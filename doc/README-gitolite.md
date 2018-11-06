@@ -1,3 +1,22 @@
+### Notes on gitolite vs gitolite3
+
+Gitohashi requires gitolite v3+.
+
+The "gitolite" package found in Fedora and older Ubuntu is actually gitolite
+v2, from many years ago.  Fedora since F16 and Ubuntu since Xenial provide a
+"gitolite3" package which is current gitolite.
+
+If you're still on v2, you'll need to go through a [one-way upgrade process](http://gitolite.com/gitolite/migr/index.html#migrating-from-gitolite-v2).
+
+v2 and v3 broadly allows mostly the same config syntax, although there are
+some removed v2 features in the .rc file and new v3 features, see [this](http://gitolite.com/gitolite/migr/index.html#step-4-identify-any-remaining-changes-needed)
+
+Additionally:
+
+ - anglebrackets and parenthesis are disallowed in config strings in v3.
+   This disallows the common email format "Name <name@email.com>"... gitohashi
+   understands "Name name@email.com" as well in order to get around this.
+
 ### Selecting which repos to show on a vhost
 
 By default, no repo is allowed to be shown, even when the vhost has supplied the
@@ -47,8 +66,14 @@ Gitolite supports it but to allow the gitolite config file to alter the bare
 repo config, you must one-time whitelist the gitweb-related keys we want to
 control from there in `.gitolite.rc` in your gitolite user home dir.
 
+gitolite v2.x
 ```
 $GL_GITCONFIG_KEYS = "gitweb.description gitweb.owner gitweb.url";
+```
+
+gitolite v3.x
+```
+$GIT_CONFIG_KEYS = "gitweb.description gitweb.owner gitweb.url";
 ```
 
 Then, in your usual gitolite config you can do this kind of thing
@@ -58,7 +83,7 @@ repo libwebsockets
         RW+     =  @ag
         R       =  v-lws
         config gitweb.description = "libwebsockets lightweight C networking library"
-        config gitweb.owner = "Andy Green <andy@warmcat.com>"
+        config gitweb.owner = "Andy Green andy@warmcat.com"
         config gitweb.url = "https://libwebsockets.org/repo/libwebsockets"
 ```
 
@@ -87,3 +112,4 @@ understand it should serve the `libwebsockets` repo and any other repos `v-lws`
 has read access to.
 
 No other repo will be opened by gitohashi for serving.
+

@@ -24,10 +24,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#define lp_to_te(p, _n) list_ptr_container(p, struct tree_entry_info, _n)
+#define lp_to_te(p, _n) lws_list_ptr_container(p, struct tree_entry_info, _n)
 
 static int
-tei_alpha_sort(list_ptr a, list_ptr b)
+tei_alpha_sort(lws_list_ptr a, lws_list_ptr b)
 {
 	struct tree_entry_info *p1 = lp_to_te(a, next),
 			       *p2 = lp_to_te(b, next);
@@ -67,7 +67,7 @@ treewalk_cb(const char *root, const git_tree_entry *entry, void *payload)
 	name = git_tree_entry_name(entry);
 	m = strlen(name) + 1;
 
-	tei = lac_use(&ctx->lac_head, sizeof(*tei) + m, 0);
+	tei = lwsac_use(&ctx->lwsac_head, sizeof(*tei) + m, 0);
 	if (!tei) {
 		lwsl_err("OOM\n");
 
@@ -90,7 +90,7 @@ treewalk_cb(const char *root, const git_tree_entry *entry, void *payload)
 
 	memcpy(tei + 1, name, m);
 
-	list_ptr_insert(&ctx->sorted_head, &tei->next, tei_alpha_sort);
+	lws_list_ptr_insert(&ctx->sorted_head, &tei->next, tei_alpha_sort);
 
 	return type == GIT_OBJ_TREE; /* don't go inside trees */
 }
@@ -98,7 +98,7 @@ treewalk_cb(const char *root, const git_tree_entry *entry, void *payload)
 static void
 job_tree_destroy(struct jg2_ctx *ctx)
 {
-	lac_free(&ctx->lac_head);
+	lwsac_free(&ctx->lwsac_head);
 	ctx->sorted_head = NULL;
 
 	if (ctx->u.tree) {
@@ -113,13 +113,20 @@ job_tree_start(struct jg2_ctx *ctx)
 {
 	git_tree_entry *te;
 	git_generic_ptr u;
-	char pure[256];
+	const char *epath = ctx->sr.e[JG2_PE_PATH];
+	char pure[256], entry_did_inline = ctx->did_inline;
 	git_commit *c;
 	git_oid oid;
 	int e;
 
 	if (!ctx->hex_oid[0]) {
-		lwsl_err("no oid\n");
+		lwsl_err("%s: no oid\n", __func__);
+
+		return 1;
+	}
+
+	if (!ctx->jrepo) {
+		lwsl_err("%s: no jrepo\n", __func__);
 
 		return 1;
 	}
@@ -165,14 +172,21 @@ job_tree_start(struct jg2_ctx *ctx)
 
 	git_commit_free(c);
 
-	if (ctx->sr.e[JG2_PE_PATH] && ctx->sr.e[JG2_PE_PATH][0]) {
-		if (git_tree_entry_bypath(&te, u.tree,
-					  ctx->sr.e[JG2_PE_PATH])) {
+	lwsl_notice("%s\n", __func__);
+
+	if (!ctx->did_inline && ctx->inline_filename[0]) {
+		epath = ctx->inline_filename;
+		lwsl_notice("using inline_filename %s\n", ctx->inline_filename);
+		ctx->did_inline = 1;
+	}
+
+	if (epath && epath[0]) {
+		if (git_tree_entry_bypath(&te, u.tree, epath)) {
 			lwsl_err("%s: git_tree_entry_bypath %s failed\n",
-				 __func__, ctx->sr.e[JG2_PE_PATH]);
+				 __func__, epath);
 			lws_snprintf(ctx->status, sizeof(ctx->status),
 				     "Path '%s' doesn't exist in revision '%s'",
-				     ctx->sr.e[JG2_PE_PATH], ctx->hex_oid);
+				     epath, ctx->hex_oid);
 
 			goto bail;
 		}
@@ -201,18 +215,33 @@ job_tree_start(struct jg2_ctx *ctx)
 	 */
 
 	if (git_object_type(u.obj) == GIT_OBJ_BLOB) {
-		const char *p = ctx->sr.e[JG2_PE_PATH], *p1;
+		const char *p = epath, *p1;
 
 		ctx->body = git_blob_rawcontent(u.blob);
 		ctx->size = git_blob_rawsize(u.blob);
 		ctx->pos = 0;
 
-		if (ctx->sr.e[JG2_PE_MODE] &&
-		    !strcmp(ctx->sr.e[JG2_PE_MODE], "blame") &&
-		    ctx->sr.e[JG2_PE_PATH] != ctx->inline_filename) {
+		lwsl_notice("%s: blob\n", __func__);
+
+		ctx->meta_last_job = 1;
+
+		/* do some searchubf */
+
+		if (ctx->sr.e[JG2_PE_SEARCH] && !ctx->did_sat &&
+		    ctx->sr.e[JG2_PE_PATH]) {
+			ctx->meta_last_job = 0;
+			ctx->blame_after_tree =
+				!strcmp(ctx->sr.e[JG2_PE_MODE], "blame");
+		}
+
+		/* countermand the FINAL if actually more to do ... */
+
+		if (ctx->sr.e[JG2_PE_MODE] && !entry_did_inline &&
+		    !strcmp(ctx->sr.e[JG2_PE_MODE], "blame")) {
 			/* we want to send blame info after this */
 			ctx->meta_last_job = 0;
-			ctx->blame_after_tree = 1;
+			ctx->blame_after_tree =
+				!strcmp(ctx->sr.e[JG2_PE_MODE], "blame");
 		}
 
 		meta_header(ctx);
@@ -246,7 +275,7 @@ job_tree_start(struct jg2_ctx *ctx)
 		ellipsis_purify(pure + strlen(pure), ctx->sr.e[JG2_PE_NAME],
 				sizeof(pure) - strlen(pure));
 		CTX_BUF_APPEND(" \"bloblink\": \"%s/plain/", pure);
-		ellipsis_purify(pure, ctx->sr.e[JG2_PE_PATH], sizeof(pure) - 5);
+		ellipsis_purify(pure, epath, sizeof(pure) - 5);
 
 		strcat(pure, "\" ");
 
@@ -281,6 +310,8 @@ job_tree_start(struct jg2_ctx *ctx)
 	jg2_json_oid(&oid, ctx);
 	CTX_BUF_APPEND(",\"tree\": [");
 
+	lwsl_notice("%s: exit OK\n", __func__);
+
 	return 0;
 
 bail:
@@ -289,7 +320,7 @@ bail:
 		u.obj = NULL;
 	}
 
-	lac_free(&ctx->lac_head);
+	lwsac_free(&ctx->lwsac_head);
 
 	ctx->failed_in_start = 1;
 	job_tree_destroy(ctx);
@@ -376,7 +407,7 @@ job_tree(struct jg2_ctx *ctx)
 
 		/* is this file in the file listing an inline doc file? */
 
-		for (n = 0; n < JG2_ARRAY_SIZE(inline_match); n++) {
+		for (n = 0; n < LWS_ARRAY_SIZE(inline_match); n++) {
 			/*
 			 * name has to be long enough to match; the end of the
 			 * name must match the inline_match name; and we must

@@ -197,6 +197,8 @@ jg2_ctx_destroy(struct jg2_ctx *ctx);
  * \param buf: buffer to write content into
  * \param len: length of buf that may be used
  * \param used: pointer to size_t filled with count of bytes in buf used
+ * \param outlive: NULL or pointer to char set to 1 if the filler wishes to
+ *		   outlive the wsi
  *
  * This generates the "next buffer load" of output from the connection context.
  * Work and anything using memory is deferred until it is actually needed, for
@@ -209,6 +211,7 @@ jg2_ctx_destroy(struct jg2_ctx *ctx);
  * Returns < 0 on error, or the amount of buffer bytes written
  */
 JG2_VISIBLE int
-jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used);
+jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
+	     char *outlive);
 
 #endif /* __LIB_JSON_GIT2_H__b1c6cef9e87b714318802950c4e08a15ffaa6559 */

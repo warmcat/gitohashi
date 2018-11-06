@@ -69,13 +69,16 @@
     };
 
     Translator.prototype.add = function(d) {
-      var c, k, v, _i, _len, _ref, _ref1, _results;
+      var c, v, _i, _len, _ref, _ref1, _results;
 
       if ((d.values != null)) {
         _ref = d.values;
+        var k;
         for (k in _ref) {
+      	  if ({}.hasOwnProperty.call(_ref, k)) {
           v = _ref[k];
           this.data.values[k] = v;
+      	  }
         }
       }
       if ((d.contexts != null)) {
@@ -120,10 +123,12 @@
       var k, v;
 
       for (k in hash) {
-        v = hash[k];
-        if (typeof v === "string") {
-          hash[k] = this.translateText(v, null, null, context);
-        }
+    	  if ({}.hasOwnProperty.call(hash, k)) {
+	        v = hash[k];
+	        if (typeof v === "string") {
+	          hash[k] = this.translateText(v, null, null, context);
+	        }
+    	  }
       }
       return hash;
     };
@@ -187,8 +192,10 @@
         equal = true;
         _ref1 = c.matches;
         for (key in _ref1) {
-          value = _ref1[key];
-          equal = equal && value === context[key];
+        	if ({}.hasOwnProperty.call(_ref1, key)) {
+        		value = _ref1[key];
+        		equal = equal && value === context[key];
+        	}
         }
         if (equal) {
           return c;
@@ -208,8 +215,10 @@
       var ind, regex;
 
       for (ind in formatting) {
-        regex = new RegExp("%{" + ind + "}", "g");
-        text = text.replace(regex, formatting[ind]);
+    	  if ({}.hasOwnProperty.call(formatting, ind)) {
+	        regex = new RegExp("%{" + ind + "}", "g");
+	        text = text.replace(regex, formatting[ind]);
+    	  }
       }
       return text;
     };
@@ -235,9 +244,10 @@
     return trans.translate;
   };
 
-  (typeof module !== "undefined" && module !== null ? module.exports = i18n : void 0) || (this.i18n = i18n);
+  (typeof module !== "undefined" && module !== null ? module.exports = i18n : void 0) || 
+  	(this.i18n = i18n);
 
-}).call(this);
+}.call(this));
 
 var lang_ja = "{" +
   "\"values\":{" +
@@ -433,7 +443,7 @@ function collect_offsetLeft(e1)
 
 function find_parent_of_type(e, type)
 {
-	while (e.tagName.toLowerCase() != type)
+	while (e.tagName.toLowerCase() !== type)
 		e = e.parentNode;
 
 	return e;
@@ -441,7 +451,7 @@ function find_parent_of_type(e, type)
 
 function parse_hashurl_start(h)
 {
-	return parseInt(h.substring(2));
+	return parseInt(h.substring(2), 10);
 }
 
 function parse_hashurl_end(h, start)
@@ -449,7 +459,7 @@ function parse_hashurl_end(h, start)
 	var t = h.indexOf("-"), e = start;
 
 	if (t >= 1)
-		e = parseInt(h.substring(t + 1));
+		e = parseInt(h.substring(t + 1), 10);
 
 	if (e < start)
 		e = start;
@@ -457,6 +467,28 @@ function parse_hashurl_end(h, start)
 	return e;
 }
 
+function burger_create(e)
+{
+	var e1 = e, etable, d = new Date;
+
+	if (burger)
+		burger.remove();
+
+	burger = document.createElement("DIV");
+	burger.className = "burger";
+	burger.style.top = collect_offsetTop(e1) + "px";
+
+	/* event listener cannot override default browser #URL behaviour */
+	burger.onclick = burger_click;
+
+	etable = find_parent_of_type(e, "table");
+	etable.insertBefore(burger, etable.firstChild);
+	burger_time = d.getTime();
+
+	setTimeout(function() {
+		burger.style.opacity = "1";
+	}, 1);
+}
 
 /*
  * This creates an absolute div as a child of the content table.
@@ -578,6 +610,45 @@ function copy_text(elem, l1, l2)
 }
 
 
+var branches = new(Array), tags = new(Array), relpre_no_mode, relpost,
+				vpath, reponame, rmode, rpath, qbranch, qid, qofs, qsearch;
+
+function makeurl(_reponame, _mode, _rpath, _qbranch, _qid, _qofs, _qs)
+{
+	var base = window.location.pathname, c = '?', b = vpath;
+
+	if (_reponame && b[0] !== '/')
+		b += '/';
+	if (_reponame)
+		b += _reponame;
+	if (_mode)
+		b += '/' + _mode;
+	if (_rpath && _rpath != null)
+		b += '/' + _rpath;
+	
+	if (_qbranch) {
+		b += '?h=' + _qbranch;
+		c = '&';
+	}
+	
+	if (_qid) {
+		b += c + 'id=' + _qid;
+		c = '&';
+	}
+	
+	if (_qofs) {
+		b += c + 'ofs=' + _qofs;
+		c = '&';
+	}
+	
+	if (_qs) {
+		b += c + 'q=' + _qs;
+		c = '&';
+	}
+
+	return san(b);
+}
+
 /*
  * An element in the popup menu was clicked, perform the appropriate action
  */
@@ -638,7 +709,7 @@ function burger_click(e) {
 	 * Create the popup menu
 	 */
 
-	is_blame = !!rmode && rmode == "blame";
+	is_blame = !!rmode && rmode === "blame";
 
 	menu_popup = document.createElement("DIV");
 	menu_popup.className = "popup-menu";
@@ -646,7 +717,7 @@ function burger_click(e) {
 
 	s = "<ul id='menu-ul'>";
 	for (n = 0; n < an.length; n++)
-		if (n < 2 || is_blame == (n == 3))
+		if (n < 2 || is_blame === (n === 3))
 			s += "<li id='" + ar[n] + "' tabindex='" + n + "'>" +
 				an[n] + "</li>";
 		    
@@ -656,7 +727,7 @@ function burger_click(e) {
 
         document.getElementById(ar[0]).focus();
 	for (n = 0; n < an.length; n++)
-		if (n < 2 || is_blame == (n == 3))
+		if (n < 2 || is_blame === (n === 3))
 			document.getElementById(ar[n]).
 				addEventListener("click", mi_click);
 				
@@ -668,35 +739,12 @@ function burger_click(e) {
 	menu_popup.addEventListener("focusout", function(e) {
 		/* if focus went to a child (menu item), ignore */
 		if (e.relatedTarget &&
-		    e.relatedTarget.parentNode.id == "menu-ul")
+		    e.relatedTarget.parentNode.id === "menu-ul")
 			return;
 
 		menu_popup.remove();
 		menu_popup = null;
 	});
-}
-
-function burger_create(e)
-{
-	var e1 = e, etable, d = new Date;
-
-	if (burger)
-		burger.remove();
-
-	burger = document.createElement("DIV");
-	burger.className = "burger";
-	burger.style.top = collect_offsetTop(e1) + "px";
-
-	/* event listener cannot override default browser #URL behaviour */
-	burger.onclick = burger_click;
-
-	etable = find_parent_of_type(e, "table");
-	etable.insertBefore(burger, etable.firstChild);
-	burger_time = d.getTime();
-
-	setTimeout(function() {
-		burger.style.opacity = "1";
-	}, 1);
 }
 
 /*
@@ -725,7 +773,7 @@ function line_range_click(e) {
 		return;
 	}
 	
-	if (e.target.id == "jglinenumbers")
+	if (e.target.id === "jglinenumbers")
 		return;
 
 	elem = document.getElementById(e.target.id);
@@ -736,12 +784,12 @@ function line_range_click(e) {
 
 	if (!window.location.hash ||
 	    window.location.hash.indexOf("-") >= 0 ||
-	    e.target.id.substring(1) == window.location.href.substring(n + 2))
+	    e.target.id.substring(1) === window.location.href.substring(n + 2))
 		t = window.location.href.substring(0, n) +
 		    '#n' + e.target.id.substring(1);
 	else {
-		if (parseInt(window.location.hash.substring(2)) <
-		    parseInt(e.target.id.substring(1)))  /* forwards */
+		if (parseInt(window.location.hash.substring(2), 10) <
+		    parseInt(e.target.id.substring(1), 10))  /* forwards */
 			t = window.location + '-' + e.target.id.substring(1);
 		else
 			t = window.location.href.substring(0, n) +
@@ -764,12 +812,12 @@ function get_appropriate_ws_url(extra_url)
 	 * https:// url itself, otherwise unencrypted
 	 */
 
-	if (u.substring(0, 5) == "https") {
+	if (u.substring(0, 5) === "https") {
 		pcol = "wss://";
 		u = u.substr(8);
 	} else {
 		pcol = "ws://";
-		if (u.substring(0, 4) == "http")
+		if (u.substring(0, 4) === "http")
 			u = u.substr(7);
 	}
 
@@ -793,7 +841,7 @@ function agify(now, secs)
 		return "";
 	
 	for (n = 0; n < age_names.length; n++)
-		if (d < age_limit[n] || age_limit[n] == 0)
+		if (d < age_limit[n] || age_limit[n] === 0)
 			return "<span class='age-" + n + "' ut='" + secs +
 				"'>" + Math.ceil(d / age_div[n]) +
 				i18n(age_names[n]) + "</span>";
@@ -865,7 +913,7 @@ function identity_av_base(i)
 {
 	var em;
 	
-	if (j_avatar != "//www.gravatar.com/avatar/") {
+	if (j_avatar !== "//www.gravatar.com/avatar/") {
 		em = j_avatar + i.md5 + "_avatar";
 	} else
 		em = j_avatar + i.md5 + "?s=128&amp;d=retro";
@@ -924,39 +972,6 @@ function new_ws(urlpath, protocol)
 	return new WebSocket(urlpath, protocol);
 }
 
-var branches = new(Array), tags = new(Array), relpre_no_mode, relpost,
-				vpath, reponame, rmode, rpath, qbranch, qid, qofs;
-
-function makeurl(_reponame, _mode, _rpath, _qbranch, _qid, _qofs)
-{
-	var base = window.location.pathname, c = '?', b = vpath;
-
-	if (_reponame && b[0] != '/')
-		b += '/';
-	if (_reponame)
-		b += _reponame;
-	if (_mode)
-		b += '/' + _mode;
-	if (_rpath && _rpath != null)
-		b += '/' + _rpath;
-	
-	if (_qbranch) {
-		b += '?h=' + _qbranch;
-		c = '&';
-	}
-	
-	if (_qid) {
-		b += c + 'id=' + _qid;
-		c = '&';
-	}
-	
-	if (_qofs) {
-		b += c + 'ofs=' + _qofs;
-		c = '&';
-	}
-
-	return san(b);
-}
 
 function aliases(oid)
 {
@@ -965,7 +980,7 @@ function aliases(oid)
 	for (m = 0; m < oid.alias.length; m++) {
 		r = oid.alias[m];
 
-		if (r.substr(0, 11) == "refs/heads/")
+		if (r.substr(0, 11) === "refs/heads/")
 			irefs += " <span class='inline-branch'>" +
 					"<table><tr><td class='tight'>" +
 					"<img class='branch' tgt='" +
@@ -977,7 +992,7 @@ function aliases(oid)
 				"</td><td class='tight'><span>" +
 				r.substr(11) + "</span></td></tr></table></span>";
 		else
-			if (r.substr(0, 10) == "refs/tags/")
+			if (r.substr(0, 10) === "refs/tags/")
 				irefs += " <span class='inline_tag'>" +
 						 "<div class='alias'>" +
 						 "<img class='tag oneem' tgt='" + san(reponame) + "-" +
@@ -1000,11 +1015,11 @@ function arch_select_handler(e)
 	e.stopPropagation();
 	e.preventDefault();
 	
-    if (!vpath || vpath[vpath.length - 1] != '/')
+    if (!vpath || vpath[vpath.length - 1] !== '/')
         newloc += '/';
 
 	newloc += reponame;
-	if (reponame[reponame.length - 1] != '/')
+	if (reponame[reponame.length - 1] !== '/')
 	        newloc += '/';
 	newloc += "snapshot/" + e.target.textContent;
 	// console.log(newloc);
@@ -1066,7 +1081,7 @@ function create_popup(t, h_px, v_px, clas, title, wid, an, ar, clicker)
 	pop.addEventListener("focusout", function(e) {
 		/* if focus went to a child (menu item), ignore */
 		if (e.relatedTarget &&
-		    e.relatedTarget.parentNode.id == "menu-ul")
+		    e.relatedTarget.parentNode.id === "menu-ul")
 			return;
 
 		pop.remove();
@@ -1147,7 +1162,7 @@ function html_branches(now, count)
 		    "</td><td>" + agify(now, branches[n].summary.time) +
 		    "</td></tr>";
 	
-	if (n == count)
+	if (n === count)
 		s += "<tr><td colspan=5><a href=\"" +
 			makeurl(reponame, "branches", rpath, qbranch, null, null) +
 			"\">[...]</a></td></tr>";
@@ -1220,7 +1235,7 @@ function html_log(l, now, count, next)
 
 	if (!l) {
 		console.log("html_log: null l\n");
-		return;
+		return "";
 	}	
 	
 	for (n = 0; n < l.length && n < count; n++) {
@@ -1238,19 +1253,22 @@ function html_log(l, now, count, next)
 	     "</td></tr>";
 	}
 	
-	if (next && n == count) {
+	if (next && n === count) {
 		s += "<tr><td colspan=5><a href='"+
 			makeurl(reponame, "log", rpath, null, next.oid, qofs) +
 			"'>next</a></td></tr>";
 	}
 	
-	s += "</table>"
+	s += "</table>";
 	
 	return s;
 }
 
 function html_commit(j) {
 	var s = "";
+	
+	if (!j.items[0].commit)
+		return;
 	
 	s += "<div><table>";
 	s += "<tr><td>" + i18n("Author") + "</td><td>" +
@@ -1331,14 +1349,14 @@ function html_tree(j, now)
 		var t = j.items[0].tree;
 	
 		for (n = 0; n < t.length; n++) {
-			if ((parseInt(t[n].mode) & 0xe000) == 0xe000)
+			if ((parseInt(t[n].mode, 10) & 0xe000) === 0xe000)
 				s += "<tr><td>&nbsp</td><td>&nbsp</td>" +
 				     "<td class='dl-dir'><img class='submodule'>&nbsp;" +
 			         san(t[n].name) + "</td></tr>";
 			else
 			
-			if (parseInt(t[n].mode) & 16384)
-				s += "<tr><td>" + filemode(parseInt(j.items[0].tree[n].mode)) + "</td>" +
+			if (parseInt(t[n].mode, 10) & 16384)
+				s += "<tr><td>" + filemode(parseInt(j.items[0].tree[n].mode, 10)) + "</td>" +
 			     "<td>&nbsp</td><td class='dl-dir'><img class='folder'>&nbsp;" +
 			     "<a class='noline' href='" +
 				 makeurl(reponame, mo, (rpath != null ? rpath + '/' : "") +
@@ -1346,9 +1364,9 @@ function html_tree(j, now)
 				 "'>" + san(t[n].name) + "</a></td></tr>";
 			else
 				s += "<tr><td>" +
-					 filemode(parseInt(j.items[0].tree[n].mode)) +
+					 filemode(parseInt(j.items[0].tree[n].mode, 10)) +
 					 "</td>" + "<td class='r'>" +
-					 parseInt(j.items[0].tree[n].size) +
+					 parseInt(j.items[0].tree[n].size, 10) +
 					 "</td><td class='dl-file'><a class='noline' href='" +
 					 makeurl(reponame, mo, (rpath != null ? rpath + '/' : "") +
 							 san(j.items[0].tree[n].name), qbranch, qid, qofs) +
@@ -1408,10 +1426,10 @@ function html_tree(j, now)
 			"<table><tr>"+
 		"<td class='doc'>";
 		
-		if (l.substr(l.length - 4).toLowerCase() == ".png" ||
-			l.substr(l.length - 4).toLowerCase() == ".jpg" ||
-			l.substr(l.length - 4).toLowerCase() == ".ico" ||
-			l.substr(l.length - 5).toLowerCase() == ".jpeg") {
+		if (l.substr(l.length - 4).toLowerCase() === ".png" ||
+			l.substr(l.length - 4).toLowerCase() === ".jpg" ||
+			l.substr(l.length - 4).toLowerCase() === ".ico" ||
+			l.substr(l.length - 5).toLowerCase() === ".jpeg") {
 
 			s += "<img src=\"" + san(l) + "\">";
 		} else
@@ -1507,6 +1525,7 @@ var sd_ext_plain = function () {
   return [ext1, ext2, ext3, ext4, ext5];
 }
 
+var ws, j;
 var last_mm, blametable, blamesel, blameotron;
 
 function blameotron_handler(e)
@@ -1519,7 +1538,7 @@ function blame_normal(d)
 		return;
 	
 	var a = document.getElementsByClassName(d);
-	var hunks = j.items[1].blame.length, hunk = parseInt(d.substr(6));
+	var hunks = j.items[1].blame.length, hunk = parseInt(d.substr(6), 10);
 
 	for (m = 0; m < a.length; m++)
 		a[m].style.backgroundColor =
@@ -1568,16 +1587,16 @@ function blame_mousemove(e)
 	
 	for (m = 0; m < elements.length; m++)
 		for (n = 0; n < elements[m].classList.length; n++) {
-			if (elements[m].classList[n] == "popup-blameotron")
+			if (elements[m].classList[n] === "popup-blameotron")
 				return;
-			if (elements[m].classList[n] == "putt")
+			if (elements[m].classList[n] === "putt")
 				return;
 		}
 	
 	
 	for (m = 0; m < elements.length; m++) 
 		for (n = 0; n < elements[m].classList.length; n++) 
-			if (elements[m].classList[n].substr(0, 6) == "bhunk-") {
+			if (elements[m].classList[n].substr(0, 6) === "bhunk-") {
 				
 				if (blamesel == elements[m].classList[n])
 					return;
@@ -1590,7 +1609,7 @@ function blame_mousemove(e)
 				
 				blamesel = elements[m].classList[n];
 				var a = document.getElementsByClassName(blamesel);
-				hunk = parseInt(blamesel.substr(6));
+				hunk = parseInt(blamesel.substr(6), 10);
 				for (i = 0; i < a.length; i++)
 					a[i].style.backgroundColor =
 						"rgba(" + (128 + (((hunk) * 64) / hunks)) +
@@ -1615,7 +1634,7 @@ function blame_mousemove(e)
 					devolve = makeurl(reponame, "blame", bp,
 							null, thehunk.orig_oid.oid, null) +
 							"#n" + thehunk.ranges[parseInt(
-							 elements[m].getAttribute("r"))].o;
+							 elements[m].getAttribute("r"), 10)].o;
 					
 					if (thehunk.orig_oid.oid != qid)
 						dl = "<a class='blameotron-revert' dest=\"" + devolve +
@@ -1674,12 +1693,12 @@ function blame_mouseout(e)
 	
 	for (m = 0; m < elements.length; m++)
 		for (n = 0; n < elements[m].classList.length; n++) {
-			if (elements[m].classList[n].substr(0, 6) == "bhunk-")
+			if (elements[m].classList[n].substr(0, 6) === "bhunk-")
 				return;
 			
-			if (elements[m].classList[n] == "popup-blameotron")
+			if (elements[m].classList[n] === "popup-blameotron")
 				return;
-			if (elements[m].classList[n] == "putt")
+			if (elements[m].classList[n] === "putt")
 				return;
 		}
 
@@ -1692,9 +1711,186 @@ function blame_mouseout(e)
 	}
 }
 
+
+function goh_fts_choose()
+{
+	var ac = document.getElementById("searchresults");
+	var inp = document.getElementById("gohsearch");
+	var jj, n, m, s = "", x, lic = 0, hl, re;
+
+//	sr.style.width = (parseInt(sr.parentNode.offsetWidth, 10) - 88) + "px";
+//	sr.style.opacity = "1";
+	
+	inp.blur();
+	ac.style.opacity = "0";
+	window.location = makeurl(reponame, "search", rpath, qbranch, null, null,
+						encodeURIComponent(inp.value));
+}
+
+function goh_ac_select(e)
+{
+	var t;
+	
+	if (e) {
+		
+		
+		 t = e.target;
+		
+		// console.log(t);
+	
+		while (t) {
+			if (t.getAttribute && t.getAttribute("string")) {
+				document.getElementById("gohsearch").value =
+						t.getAttribute("string");
+	
+				goh_fts_choose();
+				return;
+			}
+	
+			t = t.parentNode;
+		}
+	} else
+		goh_fts_choose();
+}
+
+function goh_search_input()
+{
+	//document.getElementById("searchresults").style.display = "block";
+	document.getElementById("searchresults").style.opacity = "1";
+
+	/* detect loss of focus for popup menu */
+	document.getElementById("gohsearch").
+			addEventListener("focusout", function(e) {
+			/* if focus went to a child (menu item), ignore */
+			if (e.relatedTarget &&
+			    e.relatedTarget.parentNode.id === "searchresults")
+			return;
+			
+			console.log("focusout");
+
+			document.getElementById("searchresults").style.opacity = "0";
+		//	document.getElementById("searchresults").style.display = "none";
+	});
+	
+	
+	var xhr = new XMLHttpRequest();
+
+	xhr.onopen = function(e) {
+		xhr.setRequestHeader('cache-control', 'max-age=0');
+	}
+	xhr.onload = function(e) {
+		var jj, n, s = "", x, mi = 0, lic = 0;
+		var inp = document.getElementById("gohsearch");
+		var ac = document.getElementById("searchresults");
+		
+		//console.log(xhr.responseText);
+		jj = JSON.parse(xhr.responseText);
+		
+		//console.log("jj.indexed: " + jj.indexed);
+		
+		switch(parseInt(jj.indexed, 10)) {
+		case 0: /* there is no index */
+			break;
+
+		case 1: /* yay there is an index */
+		
+			s += "<ul id='menu-ul'>";
+			for (q = 0; q < jj.items.length; q++) {
+				if (jj.items[q].ac) {
+					lic = jj.items[q].ac.length;
+					for (n = 0; n < lic; n++) {
+						var cla = "acitem", m = 0;
+						
+						if (jj.items[q].ac[n] && jj.items[q].ac[n].elided)
+							cla += " eli";
+						
+						if (jj.items[q].ac[n]) {
+							m = parseInt(jj.items[q].ac[n].matches, 10);
+							if (!m) {
+								cla += " virt";
+								m = parseInt(jj.items[q].ac[n].agg, 10);
+							}
+						}
+						
+						s += "<li id='mi_ac" + mi + "' string='" +
+									san(jj.items[q].ac[n].ac) + 
+									"'><table class='" + cla +
+									"'><tr><td>" +
+									san(jj.items[q].ac[n].ac) +
+									"</td><td class='rac'>" + m +
+									"</td></tr></table>" + "</li>";
+						
+						mi++;
+					}
+				}
+				if (jj.items[q].search) {			
+					for (n = 0; n < jj.items[q].search.length; n++)
+						s += "<li>" +
+						  parseInt(jj.items[q].search[n].matches, 10) +
+						  "</td><td>" +  san(jj.items[q].search[n].fp) +
+						  "</li>";
+				}
+			}
+			s += "</ul>";
+			
+			 if (!lic) {
+					//s = "<img class='noentry'>";
+					inp.className = "nonviable";
+					ac.style.opacity = "0";
+				 } else {
+					 inp.className = "viable";
+					 ac.style.opacity = "1";
+				 }
+			
+			break;
+			
+		default:
+			
+			/* an index is being built... */
+			
+			s = "<table><tr><td><img class='spinner'></td><td>" +
+				"<table><tr><td>Indexing</td></tr><tr><td>" +
+				"<div id='bar1' class='bar1'>" +
+				"<div id='bar2' class='bar2'>" +
+				jj.index_done + "&nbsp;/&nbsp;" + jj.index_files +
+				"</div></div></td></tr></table>" +
+				"</td></tr></table>";
+		
+			setTimeout(goh_search_input, 300);
+		
+			break;
+		}
+		
+		document.getElementById("searchresults").innerHTML = s;
+	
+		for (n = 0; n < mi; n++)
+			if (document.getElementById("mi_ac" + n))
+				document.getElementById("mi_ac" + n).
+					addEventListener("click", goh_ac_select);
+
+		inp.addEventListener("keydown",
+				function(e) {
+			var inp = document.getElementById("gohsearch");
+			var ac = document.getElementById("searchresults");
+			if (e.key === "Enter" && inp.className === "viable") {
+				goh_ac_select();
+				ac.style.opacity = "0";
+			}
+		}, false);
+		
+		if (jj.index_files) {
+			document.getElementById("bar2").style.width =
+				((150 * jj.index_done) / (jj.index_files + 1)) + "px";
+		}
+	}
+	
+	xhr.open("GET", makeurl(reponame, "ac", null, qbranch, null, null, document.getElementById("gohsearch").value));
+	xhr.send();
+}
+
 function display(j)
 {
-	var url = window.location.pathname, q,
+	var url = window.location.pathname, q, n,
 		s = "<table class='repobar'><tbody class='repobar'>",
 		now = new Date().getTime() / 1000;
 
@@ -1702,7 +1898,7 @@ function display(j)
 	 * /vpath/reponame/mode/repopath[?h=branch][id=xxx]
 	 */
 	
-	if (url.substr(0, j.vpath.length) == j.vpath)
+	if (url.substr(0, j.vpath.length) === j.vpath)
 		url = url.substr(j.vpath.length + 1);
 	
 	q = url.split('/');
@@ -1740,13 +1936,24 @@ function display(j)
 			s += "<td></td>";
 			
 		s += "</tr></table>" +
-			 "</td></tr></tbody></table></div></td></tr>" +
+			 "</td></tr></tbody></table>" +
+			 "</div></td>" +
+			 
+			 "<td class='rt'><div class='search'>" +
+			 "<table><tr><td rowspan='2'><img class='eyeglass'></td>" +
+			 "<td class='searchboxtitle'>Fulltext search<br>" +
+			 "<input type='text' id='gohsearch' name='gohsearch' maxlength='80'>" +
+			 "<div class='searchresults' id='searchresults'></div>" +
+			 "</td></tr></table></div></td>" +
+			 
+			 "</tr>" +
 			 "<tr class='tabbar'><td class='tabbar'>";
 			
 		if (q[1]) {
 			
 			switch (q[1]) {
 			case "commit":
+				if (j.items[0].commit)
 				do_aliases = j.items[0].commit.oid;
 				break;
 			case "log":
@@ -1760,7 +1967,7 @@ function display(j)
 				s1 = " class=\"selected\" ";
 				break;
 			default:
-				if (q[1] == "blame")
+				if (q[1] === "blame")
 					s4 = " class=\"selected\" ";
 				else
 					s3 = " class=\"selected\" ";
@@ -1802,7 +2009,7 @@ function display(j)
 			s += aliases(do_aliases) + "&nbsp;";
 		
 		if (rpath) {
-			var e = rpath.split('/'), n, agg = "", mo = rmode;
+			var e = rpath.split('/'), agg = "", mo = rmode;
 			
 			if (mo !== "tree" && mo !== "blame")
 				mo = "tree";
@@ -1818,7 +2025,7 @@ function display(j)
 					if (n)
 						agg += "/";
 					agg += e[n];
-					if (n == e.length - 1)
+					if (n === e.length - 1)
 						s += " / " + e[n];
 					else
 						s += " / <a href=\"" +
@@ -1833,7 +2040,7 @@ function display(j)
 		s += "</div></td></tr>";
 	}
 
-	if (q.length == 1 && reponame)
+	if (q.length === 1 && reponame)
 		relpre_no_mode += q[0] + '/';
 	
 	relpre_no_mode += q[0] + '/';
@@ -1867,6 +2074,24 @@ function display(j)
 		case "summary":
 			s += "<tr><td><main role=\"main\">" + display_summary(j, now) + "</main></td></tr>";
 			break;
+		case "search":
+			s += "<tr><td class='searchfiles'><main role=\"main\"><table>";
+
+				if (j.items[0] && j.items[0].search) {
+					lic = j.items[0].search.length;						
+					for (n = 0; n < lic; n++) {
+						
+						s += "<tr>" +
+							 "<td class='rpathinfo'>" + j.items[0].search[n].matches +
+							 "</td><td class='path'>" + j.items[0].search[n].fp +
+						"</td></tr>";
+						
+
+					}
+				}
+			
+			s += "</main></td><td>" + html_tree(j, now) + "</td></tr>";
+			break;
 		default:
 			s += "<tr><td><main role=\"main\">" + html_tree(j, now) + "</main></td></tr>";
 			break;
@@ -1874,19 +2099,21 @@ function display(j)
 	else
 		s += "<tr><td><main role=\"main\">" + html_tree(j, now) + "</main></td></tr>";
 
-	
 	s += "</table>";
 	
 	document.getElementById("result").innerHTML = s;
 	
 	/* add class-based events now the objects exist */
 
+	document.getElementById("gohsearch").addEventListener("input",
+								goh_search_input, false);
+	
 //	elems = document.getElementsByClassName("inline-identity");
 	//for (n = 0; n < elems.length; n++)
 		//elems[n].addEventListener("error", img_err_retry);
 	
 	if (j.f & 2) {
-		var elems = document.getElementsByClassName("archive"), n;
+		var elems = document.getElementsByClassName("archive");
 		for (n = 0; n < elems.length; n++)
 			elems[n].addEventListener("click", archive_click);
 		
@@ -1910,9 +2137,9 @@ function display(j)
 	}
 	
 	var name = rpath;
-	if ((name && name.substring(name.length - 3) == ".md") ||
-		(name && name.substring(name.length - 4) == ".mkd") ||
-		 ((!rmode || rmode == "tree" || rmode == "blame") &&
+	if ((name && name.substring(name.length - 3) === ".md") ||
+		(name && name.substring(name.length - 4) === ".mkd") ||
+		 ((!rmode || rmode === "tree" || rmode === "blame") &&
 		   document.getElementById("do-showdown"))) {
 		
 		doc_dir = "";
@@ -1966,7 +2193,7 @@ function display(j)
 
 					sp = hh.textContent.split('\n');
 				count = sp.length;
-				if (sp[sp.length - 1].length == 0)
+				if (sp[sp.length - 1].length === 0)
 					count--;
 
 				while (n <= count) {
@@ -2049,10 +2276,10 @@ function parse_json_reflist(j)
 	
 	for (n = 0; n < j.items[0].reflist.length; n++) {
 		var l = j.items[0].reflist[n];
-		if (l.name.substr(0, 11) == "refs/heads/")
+		if (l.name.substr(0, 11) === "refs/heads/")
 			branches.push(l);
 		else
-			if (l.name.substr(0, 10) == "refs/tags/") {
+			if (l.name.substr(0, 10) === "refs/tags/") {
 				if (l.summary.sig_tagger &&
 				    l.summary.sig_tagger.git_time)
 					l.summary.time = l.summary.sig_tagger.git_time.time;
@@ -2079,13 +2306,14 @@ function parse_json(j)
 	qid = null;
 	qbranch = null;
 	qofs = null;
+	qsearch = null;
 	jf = j.f;
 	
 	m = vpath.length;
 	if (!m)
 	if (m > 1) {
 		m += 1;
-		if (vpath[vpath.length - 1] == '/')
+		if (vpath[vpath.length - 1] === '/')
 			m--;
 	}
 	if (!reponame.length) {
@@ -2099,7 +2327,7 @@ function parse_json(j)
 		m += reponame.length;
 	
 	rmode = u.substr(m + 1);
-	if (rmode.length == 0) {
+	if (rmode.length === 0) {
 		rmode = null;
 		rml = 0;
 	} else {
@@ -2121,10 +2349,10 @@ function parse_json(j)
 	if (m >= 0)
 		rpath = rpath.substr(0, m - 1);
 	
-	if (rpath.substr(rpath.length - 1) == "/")
+	if (rpath.substr(rpath.length - 1) === "/")
 		rpath = rpath.substr(0, rpath.length - 1);
 	
-	if (rpath == "")
+	if (rpath === "")
 		rpath = null;
 	
 	u = window.location.href;
@@ -2154,6 +2382,15 @@ function parse_json(j)
 				qofs = u.substr(n + 4, m);
 			else
 				qofs = u.substr(n + 4);
+		}
+		
+		n = u.indexOf("q=");
+		if (n >= 0) {
+			m = u.substr(n + 2).indexOf('&');
+			if (m > 0)
+				qsearch = decodeURIComponent(u.substr(n + 2, m));
+			else
+				qsearch = decodeURIComponent(u.substr(n + 2));
 		}
 	}
 
@@ -2207,8 +2444,6 @@ function parse_json(j)
 		parse_json_reflist(j);
 }
 
-var ws, j;
-
 window.addEventListener("load", function() {
 	//console.log("load");
 
@@ -2216,7 +2451,7 @@ window.addEventListener("load", function() {
 }, false);
 
 document.addEventListener("DOMContentLoaded", function() {
-	var init = document.getElementById("initial-json");	
+	var init = document.getElementById("initial-json");
 
 //	ws = new_ws(get_appropriate_ws_url(window.location.pathname), "lws-gitws");
 	 
@@ -2240,14 +2475,16 @@ document.addEventListener("DOMContentLoaded", function() {
 					  {
 					    pf:agify(j.gen_ut, now),
 					    ct:Math.round(j.g / 1000),
-					    ve:parseInt(j.ehitpc),
-					    ch:parseInt(j.chitpc)
+					    ve:parseInt(j.ehitpc, 10),
+					    ch:parseInt(j.chitpc, 10)
 					  }
 					);			
 			
 			s += "</td></tr><tr>";
 			
 			for (n = 0; n < j.items.length; n++) {
+				
+				if (j.items[n].s) {
 				s += "<td><img class=\"cache\">JSON " + (n + 1) +
 					": ";
 					s += i18n("Created %{pf} ago, creation time: %{ct}ms ",
@@ -2255,7 +2492,8 @@ document.addEventListener("DOMContentLoaded", function() {
 								    pf:agify(now, j.items[n].s.c),
 								    ct:Math.round(j.items[n].s.u / 1000)
 								  }
-								);			
+								);	
+				}
 			}
 			s += "</tr></table>";
 
@@ -2291,4 +2529,4 @@ window.addEventListener("hashchange", function() {
 	line_range_highlight(1);
 }, false);
 
-})();
+}());

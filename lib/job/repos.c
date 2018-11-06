@@ -24,12 +24,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#define lp_to_rei(p, _n) list_ptr_container(p, struct repo_entry_info, _n)
+#define lp_to_rei(p, _n) lws_list_ptr_container(p, struct repo_entry_info, _n)
 
 static int
 job_repos_start(struct jg2_ctx *ctx)
 {
-	ctx->rei = lp_to_rei(ctx->vhost->rei_head, next);
+	ctx->rei = lp_to_rei(ctx->vhost->repodir->rei_head, next);
 
 	meta_header(ctx);
 
@@ -68,9 +68,8 @@ job_repos(struct jg2_ctx *ctx)
 		goto empty;
 
 	while (ctx->rei) {
-		int size = ctx->rei->name_len + ctx->rei->acl_len +
-			   ctx->rei->conf_len[0] + ctx->rei->conf_len[1] +
-			   ctx->rei->conf_len[2];
+		int size = ctx->rei->name_len + ctx->rei->conf_len[0] +
+			   ctx->rei->conf_len[1] + ctx->rei->conf_len[2];
 
 		if (!JG2_HAS_SPACE(ctx, 100 + size))
 			break;
@@ -80,8 +79,7 @@ job_repos(struct jg2_ctx *ctx)
 
 		pthread_mutex_lock(&ctx->vhost->lock); /* ======== vhost lock */
 
-		if (__repo_check_acl(ctx->vhost, p, ctx->vhost->cfg.acl_user) &&
-		    __repo_check_acl(ctx->vhost, p, ctx->acl_user)) {
+		if (jg2_acl_check(ctx, p, ctx->acl_user)) {
 			pthread_mutex_unlock(&ctx->vhost->lock); /*vhost lock */
 			goto next;
 		}
@@ -92,7 +90,7 @@ job_repos(struct jg2_ctx *ctx)
 			       ctx->subsequent ? ',' : ' ',
 			       ellipsis_purify(name, (char *)p, sizeof(name)));
 		ctx->subsequent = 1;
-		p += ctx->rei->name_len + ctx->rei->acl_len;
+		p += ctx->rei->name_len;
 
 		if (ctx->rei->conf_len[0]) {
 			CTX_BUF_APPEND(",\"desc\": \"%s\"",

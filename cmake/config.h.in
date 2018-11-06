@@ -1,2 +1,3 @@
 #cmakedefine JG2_HAVE_ARCHIVE_H
 #cmakedefine JG2_HAVE_BLAME_MAILMAP
+#cmakedefine JG2_HAS_PTHREAD_SETNAME_NP

@@ -57,9 +57,6 @@ a_write(struct archive *a, void *user, const void *p, size_t len)
 	if (avail < use)
 		use = avail;
 
-	fprintf(stderr, "xxxxx\n");
-	lwsl_err("%s: len %d, use %d\n", __func__, (int)len, (int)use);
-
 	memcpy(ctx->p, p, use);
 	ctx->p += use;
 
@@ -72,7 +69,7 @@ a_write(struct archive *a, void *user, const void *p, size_t len)
 		 * LAC buffer
 		 */
 
-		char *chunk = lac_use(&ctx->lac_head, len - use, 0);
+		char *chunk = lwsac_use(&ctx->lwsac_head, len - use, 0);
 
 		if (!chunk)
 			return -1;
@@ -80,8 +77,8 @@ a_write(struct archive *a, void *user, const void *p, size_t len)
 		memcpy(chunk, (const char *)p + use, len - use);
 
 		if (!ctx->lac) {
-			ctx->lac = ctx->lac_head;
-			ctx->lacpos = sizeof(*ctx->lac);
+			ctx->lac = ctx->lwsac_head;
+			ctx->lacpos = lwsac_sizeof();
 		}
 
 		lwsl_notice("%s: stashed in lac: %d, lacpos: %d\n", __func__,
@@ -309,7 +306,7 @@ job_snapshot_destroy(struct jg2_ctx *ctx)
 		ctx->u.obj = NULL;
 	}
 
-	lac_free(&ctx->lac_head);
+	lwsac_free(&ctx->lwsac_head);
 
 	ctx->job = NULL;
 }
@@ -342,7 +339,7 @@ job_snapshot(struct jg2_ctx *ctx)
 
 		while (ctx->lac && ctx->p != ctx->end) {
 			avail = lws_ptr_diff(ctx->end, ctx->p);
-			use = nc = ctx->lac->ofs -  ctx->lacpos;
+			use = nc = lwsac_get_tail_pos(ctx->lac) -  ctx->lacpos;
 
 			if (use > avail)
 				use = avail;
@@ -356,15 +353,15 @@ job_snapshot(struct jg2_ctx *ctx)
 			ctx->p += use;
 			ctx->lacpos += use;
 
-			if (ctx->lacpos == ctx->lac->ofs) {
+			if (ctx->lacpos == lwsac_get_tail_pos(ctx->lac)) {
 				/* if any, move to next chunk... */
-				ctx->lacpos = sizeof(*ctx->lac);
-				ctx->lac = ctx->lac->next;
+				ctx->lacpos = lwsac_sizeof();
+				ctx->lac = lwsac_get_next(ctx->lac);
 
 				/* if nothing left, free the LAC chain */
 				if (!ctx->lac) {
 					lwsl_notice("the lac chain is emptied\n");
-					lac_free(&ctx->lac_head);
+					lwsac_free(&ctx->lwsac_head);
 				} else
 					lwsl_notice("moved to next lac\n");
 			}
@@ -459,7 +456,7 @@ job_snapshot(struct jg2_ctx *ctx)
 
 		case GIT_OBJ_TREE:
 
-			if (ctx->sp == JG2_ARRAY_SIZE(ctx->stack) - 1) {
+			if (ctx->sp == LWS_ARRAY_SIZE(ctx->stack) - 1) {
 				lwsl_err("%s: too many dir levels %d\n",
 					 __func__, ctx->sp + 1);
 

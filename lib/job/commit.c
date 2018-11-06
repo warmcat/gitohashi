@@ -42,7 +42,7 @@ common_print_cb(struct jg2_ctx *ctx, int origin,
         	break;
         }
 
-	p = lac_use(&ctx->lac_head, u + 4, 0);
+	p = lwsac_use(&ctx->lwsac_head, u + 4, 0);
 	if (!p)
 		return -1;
 
@@ -213,7 +213,7 @@ job_commit_start(struct jg2_ctx *ctx)
 		goto bail;
 	}
 #endif
-	ctx->lac = ctx->lac_head;
+	ctx->lac = ctx->lwsac_head;
 	ctx->pos = 0;
 	ctx->size = 0;
 	ctx->ofs = 0;
@@ -252,7 +252,7 @@ job_commit_destroy(struct jg2_ctx *ctx)
 		ctx->u.commit = NULL;
 	}
 
-	lac_free(&ctx->lac_head);
+	lwsac_free(&ctx->lwsac_head);
 
 	ctx->job = NULL;
 }
@@ -301,7 +301,7 @@ job_commit(struct jg2_ctx *ctx)
 			ctx->body = NULL;
 
 		if (!ctx->raw_patch && !ctx->body) {
-			CTX_BUF_APPEND("\"\n", m);
+			CTX_BUF_APPEND("\"\n");
 
 			if (ctx->lac)
 				CTX_BUF_APPEND(",\n \"diff\": \"");
@@ -315,7 +315,7 @@ job_commit(struct jg2_ctx *ctx)
 
 	while (!ctx->body && ctx->lac && JG2_HAS_SPACE(ctx, 512)) {
 		size_t inlim_totlen = 84; /* control chars may bloat to 6x */
-		char *p = (char *)(ctx->lac + 1) + ctx->ofs;
+		char *p = ((char *)ctx->lac) + lwsac_sizeof() + ctx->ofs;
 
 		if (!ctx->size) {
 			ctx->size = (unsigned char)*p++;
@@ -347,12 +347,13 @@ job_commit(struct jg2_ctx *ctx)
 
 		if (ctx->pos == ctx->size) {
 			ctx->size = 0;
-			ctx->ofs = lac_align(ctx->ofs);
+			ctx->ofs = lwsac_align(ctx->ofs);
 			ctx->pos = 0;
 		}
 
-		if (ctx->ofs + sizeof(*ctx->lac) >= ctx->lac->ofs) {
-			ctx->lac = ctx->lac->next;
+		if (ctx->ofs + lwsac_sizeof() >=
+		    lwsac_get_tail_pos(ctx->lac)) {
+			ctx->lac = lwsac_get_next(ctx->lac);
 			ctx->pos = 0;
 			ctx->ofs = 0;
 			if (!ctx->lac)

@@ -43,15 +43,15 @@
 #include <string.h>
 
 #if LIBGIT2_HAS_BLAME
-#define lp_to_bhi(p, _n) list_ptr_container(p, struct blame_hunk_info, _n)
-#define lp_to_bli(p, _n) list_ptr_container(p, struct blame_line_range, _n)
+#define lp_to_bhi(p, _n) lws_list_ptr_container(p, struct blame_hunk_info, _n)
+#define lp_to_bli(p, _n) lws_list_ptr_container(p, struct blame_line_range, _n)
 #endif
 
 static void
 job_blame_destroy(struct jg2_ctx *ctx)
 {
 #if LIBGIT2_HAS_BLAME
-	lac_free(&ctx->lac_head);
+	lwsac_free(&ctx->lwsac_head);
 	ctx->sorted_head = NULL;
 
 	if (ctx->blame) {
@@ -65,7 +65,7 @@ job_blame_destroy(struct jg2_ctx *ctx)
 #if LIBGIT2_HAS_BLAME
 
 static int
-bhi_uniq_fsig_sort(list_ptr a, list_ptr b)
+bhi_uniq_fsig_sort(lws_list_ptr a, lws_list_ptr b)
 {
 	struct blame_hunk_info *p1 = lp_to_bhi(a, next_sort_fsig),
 			       *p2 = lp_to_bhi(b, next_sort_fsig);
@@ -74,7 +74,7 @@ bhi_uniq_fsig_sort(list_ptr a, list_ptr b)
 }
 
 static int
-bhi_date_sort(list_ptr a, list_ptr b)
+bhi_date_sort(lws_list_ptr a, lws_list_ptr b)
 {
 	struct blame_hunk_info *p1 = lp_to_bhi(a, next),
 			       *p2 = lp_to_bhi(b, next);
@@ -120,7 +120,7 @@ job_blame_start(struct jg2_ctx *ctx)
 
 	ctx->blame_opts.min_line = 1;
 
-	ctx->lac_head = NULL;
+	ctx->lwsac_head = NULL;
 	ctx->sorted_head = NULL;
 	ctx->pos = 0;
 
@@ -136,7 +136,7 @@ job_blame_lines(struct jg2_ctx *ctx)
 	const git_blame_hunk *hunk;
 	struct blame_line_range *r;
 	int ord = 0;//, first = 1;
-	list_ptr lp;
+	lws_list_ptr lp;
 
 	// ctx->blame_opts.max_line = ctx->blame_opts.min_line + LINE_SET;
 	ctx->blame_opts.min_line = 0;
@@ -173,7 +173,7 @@ job_blame_lines(struct jg2_ctx *ctx)
 					  &hunk->final_commit_id))
 				break;
 
-			list_ptr_advance(lp);
+			lws_list_ptr_advance(lp);
 		}
 
 		/* if it didn't already exist, add it */
@@ -234,10 +234,10 @@ job_blame_lines(struct jg2_ctx *ctx)
 			len = sizeof(*bhi) +
 			      s[0] + s[1] + s[2] + s[3] + s[4] + s[5] + s[6];
 
-			bhi = lac_use(&ctx->lac_head, len, 0);
+			bhi = lwsac_use(&ctx->lwsac_head, len, 0);
 			if (!bhi) {
 				lwsl_err("OOM\n");
-				lac_free(&ctx->lac_head);
+				lwsac_free(&ctx->lwsac_head);
 
 				return -1;
 			}
@@ -289,7 +289,7 @@ job_blame_lines(struct jg2_ctx *ctx)
 
 			/* insert him into the bhi list using date order */
 
-			list_ptr_insert(&ctx->sorted_head, &bhi->next,
+			lws_list_ptr_insert(&ctx->sorted_head, &bhi->next,
 					bhi_date_sort);
 
 			/* Has his final sig already appeared? */
@@ -324,7 +324,13 @@ job_blame_lines(struct jg2_ctx *ctx)
 		 * add this line range info to its list
 		 */
 
-		r = lac_use(&ctx->lac_head, sizeof(*r), 0);
+		r = lwsac_use(&ctx->lwsac_head, sizeof(*r), 0);
+		if (!r) {
+			lwsl_err("OOM\n");
+			lwsac_free(&ctx->lwsac_head);
+
+			return -1;
+		}
 		r->next = NULL;
 		/* write our next's ads to last guy's next */
 		*((void **)bhi->line_range_tail) = &r->next;
@@ -385,7 +391,7 @@ job_blame_lines(struct jg2_ctx *ctx)
 	lp = ctx->head_uniq_fsig;
 	while (lp) {
 		b = lp_to_bhi(lp, next_uniq_fsig);
-		list_ptr_insert(&ctx->head_sort_fsig, &b->next_sort_fsig,
+		lws_list_ptr_insert(&ctx->head_sort_fsig, &b->next_sort_fsig,
 				bhi_uniq_fsig_sort);
 		lp = b->next_uniq_fsig;
 	}
@@ -508,9 +514,9 @@ job_blame(struct jg2_ctx *ctx)
 		CTX_BUF_APPEND(",\n\"final_oid\":");
 		jg2_json_oid(&ctx->bhi->hunk.final_commit_id, ctx);
 
-		CTX_BUF_APPEND(",\n\"sig_orig\": ",
-			(unsigned int)ctx->bhi->hunk.orig_start_line_number,
-			(unsigned int)ctx->bhi->hunk.final_start_line_number);
+		CTX_BUF_APPEND(",\n\"sig_orig\": ");
+//			(unsigned int)ctx->bhi->hunk.orig_start_line_number,
+//			(unsigned int)ctx->bhi->hunk.final_start_line_number);
 		signature_json(&ctx->bhi->orig, ctx);
 
 		CTX_BUF_APPEND(",\n\"log_orig\": \"%s\"",

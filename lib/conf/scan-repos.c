@@ -29,10 +29,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#define lp_to_rei(p, _n) list_ptr_container(p, struct repo_entry_info, _n)
+#define lp_to_rei(p, _n) lws_list_ptr_container(p, struct repo_entry_info, _n)
 
 static int
-rei_alpha_sort(list_ptr a, list_ptr b)
+rei_alpha_sort(lws_list_ptr a, lws_list_ptr b)
 {
 	struct repo_entry_info *p1 = lp_to_rei(a, next),
 			       *p2 = lp_to_rei(b, next);
@@ -40,25 +40,46 @@ rei_alpha_sort(list_ptr a, list_ptr b)
 	return strcmp((const char *)(p1 + 1), (const char *)(p2 + 1));
 }
 
+/* must have repodir lock
+ *
+ * We create a file /tmp/_goh_rl_GITOLITE_ADMIN_HEAD_HASH that contains a list
+ * of dirs in the repodir (without the .git).
+ */
+
 int
-jg2_conf_scan_repos(struct jg2_vhost *vh)
+__jg2_conf_scan_repos(struct jg2_repodir *rd)
 {
+	int alen, m, ret = -1, fd = -1, f = 0;
 	char *name, filepath[256], *p;
 	struct repo_entry_info *rei;
-	int alen, m, ret = -1;
 	git_repository *repo;
 	struct dirent *de;
 	struct stat s;
 	DIR *dir;
 
-	dir = opendir(vh->cfg.repo_base_dir);
+	if (rd->rei_head) {
+		lwsl_notice("%s: NOP since rei head populated\n", __func__);
+
+		return 0;
+	}
+
+	dir = opendir(rd->repo_base_dir);
 	if (!dir) {
 		lwsl_err("Unable to walk repo dir '%s'\n",
-			 vh->cfg.repo_base_dir);
+			 rd->repo_base_dir);
 		return -1;
 	}
 
-	pthread_mutex_lock(&vh->lock); /* ======================== vhost lock */
+	lws_snprintf(filepath, sizeof(filepath),
+		     "/tmp/_goh_rl_%s", rd->hexoid_gitolite_conf);
+	fd = open(filepath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	if (fd < 0) {
+		lwsl_err("%s: unable to create repo list\n", __func__);
+		ret = -1;
+		goto bail;
+	}
+
+	lwsl_err("%s: preparing stdin %s\n", __func__, filepath);
 
 	do {
 		de = readdir(dir);
@@ -66,7 +87,7 @@ jg2_conf_scan_repos(struct jg2_vhost *vh)
 			break;
 
 		lws_snprintf(filepath, sizeof(filepath), "%s/%s",
-			     vh->cfg.repo_base_dir, de->d_name);
+			     rd->repo_base_dir, de->d_name);
 
 		if (stat(filepath, &s))
 			continue;
@@ -82,8 +103,6 @@ jg2_conf_scan_repos(struct jg2_vhost *vh)
 		if (!strcmp(de->d_name, "gitolite-admin.git"))
 			continue;
 
-		lwsl_notice("%s: %s\n", __func__, filepath);
-
 		if (git_repository_open_ext(&repo, filepath, 0, NULL)) {
 			if (giterr_last())
 				giterr_clear();
@@ -97,7 +116,7 @@ jg2_conf_scan_repos(struct jg2_vhost *vh)
 		alen = jg2_get_repo_config(repo, NULL, NULL);
 
 		/* allocate the whole area at once */
-		rei = lac_use(&vh->rei_lac_head, sizeof(*rei) + m + alen, 0);
+		rei = lwsac_use(&rd->rei_lwsac_head, sizeof(*rei) + m + alen, 0);
 		if (!rei) {
 			git_repository_free(repo);
 			goto bail;
@@ -109,23 +128,28 @@ jg2_conf_scan_repos(struct jg2_vhost *vh)
 		name[m - 4] = '\0';
 		p += m - 3;
 		rei->name_len = m - 3;
-		rei->acl_len = 0; /* no restriction on this vhost */
+		rei->acls_valid_head = NULL;
 		rei->conf_len[0] = rei->conf_len[1] = rei->conf_len[2] = 0;
 
 		/* place the config elements */
 		jg2_get_repo_config(repo, rei, p);
 
-		list_ptr_insert(&vh->rei_head, &rei->next, rei_alpha_sort);
+		lws_list_ptr_insert(&rd->rei_head, &rei->next, rei_alpha_sort);
 
 		git_repository_free(repo);
+
+		if (f)
+			write(fd, "\n", 1);
+		f = 1;
+		write(fd, de->d_name, m - 4);
 
 	} while (de);
 
 	ret = 0;
 
 bail:
-	pthread_mutex_unlock(&vh->lock); /*--------------------- vhost unlock */
-
+	if (fd != -1)
+		close(fd);
 	closedir(dir);
 
 	return ret;

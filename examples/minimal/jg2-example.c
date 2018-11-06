@@ -125,7 +125,7 @@ main(int argc, char *argv[])
 		 * want.
 		 */
 
-		done = jg2_ctx_fill(ctx, buf, sizeof(buf), &used);
+		done = jg2_ctx_fill(ctx, buf, sizeof(buf), &used, NULL);
 		if (done < 0) {
 			fprintf(stderr, "json job failed\n");
 

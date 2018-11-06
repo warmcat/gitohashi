@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
 
@@ -90,7 +91,7 @@ __jg2_vhost_reference_html(struct jg2_vhost *vh)
 
 	/* we hold the vhost's canned html in memory for speed */
 
-	if (lac_cached_file(vh->cfg.vhost_html_filepath, &vh->html_content,
+	if (lwsac_cached_file(vh->cfg.vhost_html_filepath, &vh->html_content,
 			    &vh->html_len))
 		return 1;
 
@@ -101,7 +102,7 @@ __jg2_vhost_reference_html(struct jg2_vhost *vh)
 		lwsl_err("%s: %s lacks \"%s\" marker\n", __func__,
 			 vh->cfg.vhost_html_filepath, JG2_HTML_META);
 
-		lac_use_cached_file_detach(&vh->html_content);
+		lwsac_use_cached_file_detach(&vh->html_content);
 
 		return 1;
 	}
@@ -114,14 +115,14 @@ __jg2_vhost_reference_html(struct jg2_vhost *vh)
 		lwsl_err("%s: %s lacks \"%s\" marker\n", __func__,
 			 vh->cfg.vhost_html_filepath, JG2_HTML_DYNAMIC);
 
-		lac_use_cached_file_detach(&vh->html_content);
+		lwsac_use_cached_file_detach(&vh->html_content);
 
 		return 1;
 	}
 
 	vh->dynamic = q - (char *)vh->html_content;
 
-	lac_use_cached_file_start(vh->html_content);
+	lwsac_use_cached_file_start(vh->html_content);
 
 	return 0;
 }
@@ -146,15 +147,13 @@ jg2_repodir_find_create(struct jg2_repodir **phead, const char *path)
 
 	if (phead == &jg2_global.cachedir_head) {
 		jg2_global.count_cachedirs++;
-		if (jg2_global.count_cachedirs == 1) {
-			if (pthread_create(&jg2_global.cache_thread, NULL,
-					   cache_trim_thread, &jg2_global)) {
-				lwsl_err("cache trim thread creation failed\n");
-				free(rd);
-				jg2_global.count_cachedirs--;
+		if (jg2_global.count_cachedirs == 1 &&
+		    cache_trim_thread_spawn(&jg2_global)) {
+			lwsl_err("cache trim thread creation failed\n");
+			free(rd);
+			jg2_global.count_cachedirs--;
 
-				return NULL;
-			}
+			return NULL;
 		}
 	}
 
@@ -167,6 +166,8 @@ jg2_repodir_find_create(struct jg2_repodir **phead, const char *path)
 	rd->next = *phead;
 	*phead = rd;
 
+	rd->jg2_global = &jg2_global;
+
 	return rd;
 }
 
@@ -178,9 +179,12 @@ jg2_repodir_destroy(struct jg2_repodir **phead, struct jg2_repodir *repodir)
 	while (rd) {
 		if (rd == repodir) {
 			*ord = rd->next;
-			if (rd->batch)
-				free(rd->batch);
+
+			if (rd->dcs)
+				lws_diskcache_destroy(&rd->dcs);
+
 			pthread_mutex_destroy(&rd->lock);
+			lwsac_free(&rd->rei_lwsac_head);
 			free(rd);
 			break;
 		}
@@ -211,32 +215,6 @@ void jg2_safe_libgit2_deinit(void)
 #endif
 }
 
-static const char *hex = "0123456789abcdef";
-
-static int
-jg2_cache_prepare(const char *cache_base_dir, int mode, int uid)
-{
-	char dir[128];
-	int n, m;
-
-	(void)mkdir(cache_base_dir, mode);
-	(void)chown(cache_base_dir, uid, -1);
-
-	for (n = 0; n < 16; n++) {
-		lws_snprintf(dir, sizeof(dir), "%s/%c", cache_base_dir, hex[n]);
-		(void)mkdir(dir, mode);
-		(void)chown(dir, uid, -1);
-		for (m = 0; m < 16; m++) {
-			lws_snprintf(dir, sizeof(dir), "%s/%c/%c",
-				     cache_base_dir, hex[n], hex[m]);
-			(void)mkdir(dir, mode);
-			(void)chown(dir, uid, -1);
-		}
-	}
-
-	return 0;
-}
-
 struct jg2_vhost *
 jg2_vhost_create(const struct jg2_vhost_config *config)
 {
@@ -256,14 +234,24 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 
 	email_vhost_init(vhost);
 
-	if (!jg2_global.vhost_head)
+	if (!jg2_global.vhost_head) {
 		pthread_mutex_init(&jg2_global.lock, NULL);
+
+		if (jg2_gitolite3_interface(&jg2_global, config->repo_base_dir)) {
+			lwsl_err("couldn't init gl3 interface\n");
+
+			goto bail;
+		}
+		lwsl_notice("%s: created gl3 interface, detected v%d\n",
+				__func__, jg2_global.gitolite_version);
+	}
 
 	/* add ourselves to the global vhost list */
 
 	pthread_mutex_lock(&jg2_global.lock); /* ================ global lock */
 	vhost->vhost_list = jg2_global.vhost_head;
 	jg2_global.vhost_head = vhost;
+	vhost->jg2_global = &jg2_global;
 	pthread_mutex_unlock(&jg2_global.lock); /* ------------ global unlock */
 
 	pthread_mutex_lock(&vhost->lock); /* ===================== vhost lock */
@@ -278,33 +266,33 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 	if (config->json_cache_base) {
 
 		if (config->cache_uid)
-			jg2_cache_prepare(config->json_cache_base, 0700,
-					  config->cache_uid);
+			lws_diskcache_prepare(config->json_cache_base, 0700,
+					      config->cache_uid);
 
 		vhost->cachedir = jg2_repodir_find_create(
 						&jg2_global.cachedir_head,
 						config->json_cache_base);
-	}
+		if (!vhost->cachedir)
+			goto bail;
 
-	if (vhost->cachedir && !vhost->cachedir->cache_size_limit)
-		vhost->cachedir->cache_size_limit = config->cache_size_limit;
+		vhost->cachedir->dcs = lws_diskcache_create(
+				config->json_cache_base,
+				config->cache_size_limit);
+
+		if (!vhost->cachedir->dcs)
+			goto bail;
+	}
 
 	if (vhost->cfg.vhost_html_filepath) {
 		if (__jg2_vhost_reference_html(vhost))
 			goto bail;
 
-		lac_use_cached_file_end(&vhost->html_content);
+		lwsac_use_cached_file_end(&vhost->html_content);
 	}
 
 	pthread_mutex_unlock(&vhost->lock); /* ----------------- vhost unlock */
 
 	jg2_safe_libgit2_init();
-
-	/* get a list of all the repos in the vhost's repo base dir */
-	jg2_conf_scan_repos(vhost);
-
-	/* acquire the ACLs to find out which repos are visible to whom */
-	jg2_conf_scan_gitolite(vhost);
 
 	return vhost;
 
@@ -329,7 +317,7 @@ __jg2_ctx_destroy(struct jg2_ctx *ctx)
 
 	ctx->destroying = 1;
 
-	lac_use_cached_file_end(&ctx->vhost->html_content);
+	lwsac_use_cached_file_end(&ctx->vhost->html_content);
 
 	/*
 	 * closing while an incomplete job is going wouldn't be strange
@@ -434,9 +422,6 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 		r = r1;
 	}
 
-	lac_free(&vhost->rei_lac_head);
-	lac_free(&vhost->acl_lac_head);
-
 	giterr_clear();
 
 	jg2_safe_libgit2_deinit();
@@ -444,7 +429,7 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 	email_vhost_deinit(vhost);
 
 	if (vhost->html_content)
-		lac_use_cached_file_detach(&vhost->html_content);
+		lwsac_use_cached_file_detach(&vhost->html_content);
 
 	pthread_mutex_unlock(&vhost->lock); /* ----------------- vhost unlock */
 
@@ -490,9 +475,11 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 
 	pthread_mutex_unlock(&jg2_global.lock); /* ------------ global unlock */
 
-	if (!jg2_global.vhost_head)
+	if (!jg2_global.vhost_head) {
+		jg2_gitolite3_interface_destroy(&jg2_global);
 		/* we were the last vhost going away, destroy global assets */
 		pthread_mutex_destroy(&jg2_global.lock);
+	}
 
 	pthread_mutex_destroy(&vhost->lock);
 
@@ -561,17 +548,6 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 
 	jg2_repopath_split(args->repo_path, &ctx->sr);
 
-	if (ctx->sr.e[JG2_PE_NAME] && ctx->sr.e[JG2_PE_NAME][0] &&
-	    __repo_check_acl(vhost, ctx->sr.e[JG2_PE_NAME],
-			     vhost->cfg.acl_user) &&
-	    __repo_check_acl(vhost, ctx->sr.e[JG2_PE_NAME],
-			     ctx->acl_user)) {
-		lwsl_notice("%s: permission denied: %s\n", __func__,
-				ctx->sr.e[JG2_PE_NAME]);
-		m = JG2_CTX_CREATE_ACL_DENIED;
-		goto bail1;
-	}
-
 	/* bots are not allowed to use blame */
 
 	if ((flags & JG2_CTX_FLAG_BOT) && ctx->sr.e[JG2_PE_MODE] &&
@@ -600,14 +576,19 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 	if (ctx->sr.e[JG2_PE_NAME]) {
 		const char *str;
 		const struct repo_entry_info *rei;
+		struct jg2_repodir *rd = vhost->repodir;
 
-		rei = jg2_lookup_repo_config(vhost, ctx->sr.e[JG2_PE_NAME]);
+		pthread_mutex_lock(&rd->lock); /* ============== repodir lock */
+
+		rei = __jg2_repodir_repo(rd, ctx->sr.e[JG2_PE_NAME]);
 		if (rei) {
 			str = jg2_rei_string(rei, REI_STRING_CONFIG_DESC);
 
 			if (str && str[0] == '+')
 				ctx->blog_mode = 1;
 		}
+
+		pthread_mutex_unlock(&rd->lock); /* ---------- repodir unlock */
 	}
 
 	if (ctx->blog_mode && !ctx->sr.e[JG2_PE_MODE])
@@ -615,12 +596,13 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 
 	/* /plain/, /snapshot/, /patch/ overrides sandwich mode */
 
-	if (ctx->sr.e[JG2_PE_MODE] && jg2_job_naked(ctx))
+	if (ctx->sr.e[JG2_PE_MODE] && (jg2_job_naked(ctx) ||
+			!strcmp(ctx->sr.e[JG2_PE_MODE], "ac")))
 		flags &= ~JG2_CTX_FLAG_HTML;
 
 	ctx->flags = flags;
-	ctx->html_state = flags & JG2_CTX_FLAG_HTML ? HTML_STATE_HTML_META :
-							 HTML_STATE_JOB1;
+	ctx->html_state = (flags & JG2_CTX_FLAG_HTML) ? HTML_STATE_HTML_META :
+							HTML_STATE_JOB1;
 
 	*args->mimetype = "text/html; charset=utf-8";
 	*args->length = 0;
@@ -629,6 +611,23 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 	    !strcmp(ctx->sr.e[JG2_PE_MODE], "patch"))
 		*args->mimetype = "text/plain; charset=utf-8";
 
+
+	/*
+	 * ensure that the repodir is prepared with the repo list and this
+	 * vhost's acls
+	 */
+	pthread_mutex_lock(&vhost->repodir->lock); /* ========== repodir lock */
+	__jg2_conf_gitolite_admin_head(ctx);
+	pthread_mutex_unlock(&vhost->repodir->lock); /* ------ repodir unlock */
+
+	if (ctx->sr.e[JG2_PE_NAME] && ctx->sr.e[JG2_PE_NAME][0] &&
+	    jg2_acl_check(ctx, ctx->sr.e[JG2_PE_NAME], ctx->acl_user) &&
+	    jg2_acl_check(ctx, ctx->sr.e[JG2_PE_NAME], vhost->cfg.acl_user)) {
+		lwsl_notice("%s: ACL permission denied: %s\n", __func__,
+			    ctx->sr.e[JG2_PE_NAME]);
+		m = JG2_CTX_CREATE_ACL_DENIED;
+		goto bail1;
+	}
 
 	ctx->md5_ctx = vhost->cfg.md5_alloc();
 
@@ -769,7 +768,7 @@ do_mime:
 		} else
 			lwsl_err("blob_from_commit failed\n");
 
-		for (n = 0; n < JG2_ARRAY_SIZE(mime); n++) {
+		for (n = 0; n < LWS_ARRAY_SIZE(mime); n++) {
 			sl = strlen(mime[n].suffix);
 
 			if (l > sl &&
@@ -785,7 +784,7 @@ do_mime:
 	    !strcmp(ctx->sr.e[JG2_PE_MODE], "snapshot")) {
 		size_t sl, n, l = strlen(ctx->sr.e[JG2_PE_PATH]);
 
-		for (n = 0; n < JG2_ARRAY_SIZE(mime); n++) {
+		for (n = 0; n < LWS_ARRAY_SIZE(mime); n++) {
 			sl = strlen(mime[n].suffix);
 
 			if (l > sl &&

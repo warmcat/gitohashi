@@ -49,19 +49,20 @@ $ cmake .. -DJG2_GIT2_INC_PATH=/usr/local/include \
 ### Step 2: clone, build, install
 
 One dependent project and gitohashi need to be built, but both of them can be
-built will cmake using default options simply.
+built will cmake using default options simply.  Libwebsockets is available
+packaged in most distros, but we need the latest version to support gitohashi.
 
 Order|Project|Clone command
 ---|---|---
 1|libwebsockets| `git clone https://libwebsockets.org/repo/libwebsockets`
-3|gitohashi| `git clone https://warmcat.com/repo/gitohashi`
+2|gitohashi| `git clone https://warmcat.com/repo/gitohashi`
 
 enter the cloned dir for each in turn and build like this:
 
 ```
 $ mkdir build
 $ cd build
-$ cmake ..
+$ cmake ..  (for libwebsockets, `cmake .. -DLWS_FOR_GITOHASHI=1`)
 $ make && sudo make install
 ```
 

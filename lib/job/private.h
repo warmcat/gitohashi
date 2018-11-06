@@ -9,6 +9,9 @@ typedef enum {
 	JG2_JOB_SNAPSHOT,
 	JG2_JOB_BLAME,
 	JG2_JOB_BLOG,
+	JG2_JOB_SEARCH,
+
+	JG2_JOB_SEARCH_TRIE = 99
 } jg2_job_enum;
 
 typedef enum {
@@ -37,11 +40,12 @@ typedef enum {
 
 	EMIT_STATE_BLOG,
 
+	EMIT_STATE_SEARCH,
+
 } jg2_job_state;
 
 enum rei_string_index {
 	REI_STRING_NAME,
-	REI_STRING_ACL,
 	REI_STRING_CONFIG_DESC,
 	REI_STRING_CONFIG_OWNER,
 	REI_STRING_CONFIG_URL
@@ -115,11 +119,11 @@ void
 __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 			     char *md5_hex33);
 
-const struct repo_entry_info *
-jg2_lookup_repo_config(struct jg2_vhost *vh, const char *repo_name);
-
 const char *
 jg2_rei_string(const struct repo_entry_info *rei, enum rei_string_index n);
+
+int
+job_search_check_indexed(struct jg2_ctx *ctx, uint32_t *files, uint32_t *done);
 
 /* jobs */
 
@@ -149,3 +153,6 @@ job_blame(struct jg2_ctx *ctx);
 
 int
 job_blog(struct jg2_ctx *ctx);
+
+int
+job_search(struct jg2_ctx *ctx);

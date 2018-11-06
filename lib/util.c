@@ -28,17 +28,6 @@
 
 #include <sys/time.h>
 
-static const char * const log_level_names[] = {
-	"ERR",
-	"WARN",
-	"NOTICE",
-	"INFO",
-	"DEBUG",
-	"USER",
-	"?",
-	"?"
-};
-
 static const char *hex = "0123456789abcdef";
 
 /*
@@ -89,7 +78,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 			goto bail;
 		}
 
-	for (n = 0; n < 3; n++) {
+	for (n = 0; n < 4; n++) {
 		p = strchr(p, !n ? '?' : '&');
 		if (!p)
 			return 0;
@@ -106,7 +95,8 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 			sr->e[JG2_PE_ID] = p + 1;
 		if (p[-1] == 's') /* ofs */
 			sr->offset = atoi(p + 1);
-
+		if (p[-1] == 'q')
+			sr->e[JG2_PE_SEARCH] = p + 1;
 		p++;
 	}
 
@@ -230,138 +220,6 @@ jg2_zalloc(size_t s)
 	return v;
 }
 
-int
-lws_snprintf(char *str, size_t size, const char *format, ...)
-{
-	va_list ap;
-	int n;
-
-	if (!size)
-		return 0;
-
-	va_start(ap, format);
-	n = vsnprintf(str, size, format, ap);
-	va_end(ap);
-
-	if (n >= (int)size)
-		return (int)size;
-
-	return n;
-}
-
-unsigned long long time_in_microseconds(void)
-{
-	struct timeval tv;
-
-	gettimeofday(&tv, NULL);
-	return ((unsigned long long)tv.tv_sec * 1000000LL) + tv.tv_usec;
-}
-
-int
-lwsl_timestamp(int level, char *p, int len)
-{
-	time_t o_now = time(NULL);
-	unsigned long long now;
-	struct tm *ptm = NULL;
-#ifndef WIN32
-	struct tm tm;
-#endif
-	int n;
-
-#ifndef _WIN32_WCE
-#ifdef WIN32
-	ptm = localtime(&o_now);
-#else
-	if (localtime_r(&o_now, &tm))
-		ptm = &tm;
-#endif
-#endif
-
-	p[0] = '\0';
-	for (n = 0; n < JG2_LLL_COUNT; n++) {
-		if (level != (1 << n))
-			continue;
-		now = time_in_microseconds() / 100;
-		if (ptm)
-			n = lws_snprintf(p, len,
-				"[%04d/%02d/%02d %02d:%02d:%02d:%04d] %s: ",
-				ptm->tm_year + 1900,
-				ptm->tm_mon + 1,
-				ptm->tm_mday,
-				ptm->tm_hour,
-				ptm->tm_min,
-				ptm->tm_sec,
-				(int)(now % 10000), log_level_names[n]);
-		else
-			n = lws_snprintf(p, len, "[%llu:%04d] %s: ",
-					(unsigned long long) now / 10000,
-					(int)(now % 10000), log_level_names[n]);
-		return n;
-	}
-
-	return 0;
-}
-
-static const char * const colours[] = {
-	"[31;1m", /* LLL_ERR */
-	"[36;1m", /* LLL_WARN */
-	"[35;1m", /* LLL_NOTICE */
-	"[32;1m", /* LLL_INFO */
-	"[34;1m", /* LLL_DEBUG */
-	"[30;1m", /* LLL_USER */
-};
-
-void lwsl_emit_stderr(int level, const char *line)
-{
-	int n, m = JG2_ARRAY_SIZE(colours) - 1;
-	static char tty = 3;
-	char buf[50];
-
-	if (!tty)
-		tty = isatty(2) | 2;
-	lwsl_timestamp(level, buf, sizeof(buf));
-
-	if (tty == 3) {
-		n = 1 << (JG2_ARRAY_SIZE(colours) - 1);
-		while (n) {
-			if (level & n)
-				break;
-			m--;
-			n >>= 1;
-		}
-		fprintf(stderr, "%c%s%s%s%c[0m", 27, colours[m], buf, line, 27);
-	} else
-		fprintf(stderr, "%s%s", buf, line);
-}
-
-void _lws_logv(int filter, const char *format, va_list vl)
-{
-	char buf[256];
-	int n;
-
-//	if (!(log_level & filter))
-//		return;
-
-	n = vsnprintf(buf, sizeof(buf) - 1, format, vl);
-	(void)n;
-	/* vnsprintf returns what it would have written, even if truncated */
-	if (n > (int)sizeof(buf) - 1)
-		n = sizeof(buf) - 1;
-	if (n > 0)
-		buf[n] = '\0';
-
-	lwsl_emit_stderr(filter, buf);
-}
-
-void _jg2_log(int filter, const char *format, ...)
-{
-	va_list ap;
-
-	va_start(ap, format);
-	_lws_logv(filter, format, ap);
-	va_end(ap);
-}
-
 const char *
 md5_to_hex_cstr(char *md5_hex_33, const unsigned char *md5)
 {
@@ -458,8 +316,30 @@ identity_json(const char *name_email, struct jg2_ctx *ctx)
 	size_t len;
 
 	p1 = p = strchr(name_email, '<');
-	if (!p || p == name_email)
+	if (p == name_email)
 		goto try;
+
+	if (!p) { /* there's no < */
+		p = strchr(name_email, '@');
+		if (!p)
+			goto try;
+
+		while (p > name_email && *p != ' ')
+			p--;
+
+		if (p == name_email)
+			goto try;
+
+		len = (int)(p - name_email);
+		if (len >= sizeof(name))
+			len = sizeof(name) - 1;
+		strncpy(name, name_email, len);
+		name[len] = '\0';
+
+		name_email_json(name, p + 1, ctx);
+
+		return;
+	}
 
 	if (p[-1] == ' ')
 		p--;
@@ -536,7 +416,7 @@ otype_name(git_otype type)
 {
 	size_t ntype = type + 2;
 
-	if (ntype >= JG2_ARRAY_SIZE(otype_table))
+	if (ntype >= LWS_ARRAY_SIZE(otype_table))
 		return "unknown";
 
 	return otype_table[ntype];
@@ -568,7 +448,7 @@ jg2_json_oid(const git_oid *oid, struct jg2_ctx *ctx)
 	struct jg2_ref *aliases[8];
 	int n, m = 0;
 
-	n = jg2_oid_to_ref_names(oid, ctx, aliases, JG2_ARRAY_SIZE(aliases));
+	n = jg2_oid_to_ref_names(oid, ctx, aliases, LWS_ARRAY_SIZE(aliases));
 
 	CTX_BUF_APPEND("{ \"oid\": \"%s\", "
 		       "\"alias\": [", oid_to_hex_cstr(oid_hex, oid));

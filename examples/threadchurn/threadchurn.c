@@ -70,7 +70,7 @@ thread_spam(void *d)
 			char buf[4096];
 			size_t used;
 
-			done = jg2_ctx_fill(ctx, buf, sizeof(buf), &used);
+			done = jg2_ctx_fill(ctx, buf, sizeof(buf), &used, NULL);
 			if (done < 0) {
 				fprintf(stderr, "json job failed\n");
 

@@ -39,6 +39,7 @@ struct task_data_gitohashi {
 	struct jg2_ctx *ctx;
 	size_t used;
 	char final;
+	char outlive;
 };
 
 struct pss_gitohashi {
@@ -70,7 +71,8 @@ static enum lws_threadpool_task_return
 task_function(void *user, enum lws_threadpool_task_status s)
 {
 	struct task_data_gitohashi *priv = (struct task_data_gitohashi *)user;
-	int n;
+	int n, flags = 0, opa;
+	char outlive = 0;
 
 	/*
 	 * first time, we must do the http reply, and either acquire the
@@ -81,12 +83,18 @@ task_function(void *user, enum lws_threadpool_task_status s)
 
 	/* we sent the last bit already */
 
-	if (priv->frametype == LWS_WRITE_HTTP_FINAL)
+	if (!priv->outlive && priv->frametype == LWS_WRITE_HTTP_FINAL)
 		return LWS_TP_RETURN_FINISHED;
 
 	priv->frametype = LWS_WRITE_HTTP;
 	n = jg2_ctx_fill(priv->ctx, priv->buf + LWS_PRE,
-			 sizeof(priv->buf) - LWS_PRE, &priv->used);
+			 sizeof(priv->buf) - LWS_PRE, &priv->used, &outlive);
+
+	opa = priv->outlive;
+	if (outlive) {
+		priv->outlive = 1;
+		flags = LWS_TP_RETURN_FLAG_OUTLIVE;
+	}
 
 	if (n < 0)
 		return LWS_TP_RETURN_STOPPED;
@@ -96,11 +104,18 @@ task_function(void *user, enum lws_threadpool_task_status s)
 		priv->final = 1;
 	}
 
-	if (priv->used)
-		return LWS_TP_RETURN_SYNC;
+	if (priv->used) {
+		if (opa)
+			/*
+			 * he can't send anything when in outlive mode.
+			 * take it as his having finished.
+			 */
+			return LWS_TP_RETURN_FINISHED;
 
-	return LWS_TP_RETURN_CHECKING_IN;
+		return LWS_TP_RETURN_SYNC | flags;
+	}
 
+	return LWS_TP_RETURN_CHECKING_IN | flags;
 }
 
 static int
@@ -145,26 +160,12 @@ http_reply(struct lws *wsi, struct vhd_gitohashi *vhd,
 	p = start;
 
 	if (jg2_ctx_create(vhd->jg2_vhost, &priv->ctx, &args)) {
-		lwsl_err("%s: jg2_ctx_create fail: %s\n", __func__, start);
 
-		/* we can't serve this, for whatever reason */
+		lwsl_info("%s: jg2_ctx_create fail: %s\n", __func__, start);
 
-		if (lws_add_http_header_status(wsi,
-				HTTP_STATUS_INTERNAL_SERVER_ERROR, &p, end))
-			return -1;
-
-		if (lws_finalize_http_header(wsi, &p, end))
-			return -1;
-
-		n = lws_write(wsi, start, p - start, LWS_WRITE_HTTP_HEADERS |
-						     LWS_WRITE_H2_STREAM_END);
-		if (n != (p - start)) {
-			lwsl_err("_write returned %d from %ld\n", n,
-				 (long)(p - start));
-			return -1;
-		}
-
-		goto transaction_completed;
+		lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN,
+				"403 Forbidden");
+		return 0;
 	}
 
 	/* does he actually already have a current version of it? */
@@ -598,7 +599,7 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 			priv->used = 0;
 
 			if (priv->frametype == LWS_WRITE_HTTP_FINAL) {
-				lws_threadpool_task_sync(task, 1);
+				lws_threadpool_task_sync(task, !priv->outlive);
 				goto transaction_completed;
 			}
 		}
