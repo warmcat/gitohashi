@@ -727,6 +727,8 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 	jg2_job job_in;
 	int more;
 
+	lwsl_err("%s\n", __func__);
+
 	*used = 0;
 
 	ctx->buf = buf;
@@ -859,6 +861,9 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 		/* fallthru */
 
 	case HTML_STATE_JSON:
+
+		lwsl_err("%s: STATE_JSON\n", __func__);
+
 		if (!jg2_ctx_get_job(ctx))
 			break;
 
@@ -888,6 +893,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 			ctx->meta_last_job = 1;
 			ctx->partway = 0;
 		}
+		lwsl_err("%s: job says %d\n", __func__, more);
 
 		ctx->us_gen += timeval_us(&t2) - timeval_us(&ctx->tv_last);
 
@@ -903,12 +909,15 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 
 		if (ctx->final == 2) {
 			*used = lws_ptr_diff(ctx->p, ctx->buf);
-
+			lwsl_err("ctx->final says 2\n");
+//			ctx->meta_last_job = 1;
 			return 1;
 		}
 
-		if (ctx->partway)
+		if (ctx->partway) {
+			lwsl_err("%s: partway (final %d)\n", __func__, ctx->final);
 			break;
+		}
 
 		switch (ctx->job_state) {
 		case EMIT_STATE_SUMMARY:
@@ -963,7 +972,7 @@ lwsl_err("doing chained search %s %s\n", search, ctx->sr.e[JG2_PE_PATH]);
 
 			/* fallthru */
 		default:
-
+			lwsl_err("next job default\n");
 			/*
 			 * This is the end for a single JSON job, chained or
 			 * just on its own.  Finish up the cache file if we
@@ -973,15 +982,19 @@ lwsl_err("doing chained search %s %s\n", search, ctx->sr.e[JG2_PE_PATH]);
 			if (ctx->fd_cache != -1)
 				cache_write_complete(ctx);
 
-			if (ctx->flags & JG2_CTX_FLAG_HTML)
+			if (ctx->flags & JG2_CTX_FLAG_HTML) {
+				lwsl_err("says trailer\n");
 				ctx->html_state = HTML_STATE_HTML_TRAILER;
-			else
+			} else {
+				lwsl_err("says completed\n");
 				ctx->html_state = HTML_STATE_COMPLETED;
+			}
 			break;
 		}
 		break;
 
 	case HTML_STATE_HTML_TRAILER:
+		lwsl_err("HTML_STATE_HTML_TRAILER\n");
 		left = lws_ptr_diff(ctx->end, ctx->p);
 		m = ctx->vhost->html_len - ctx->html_pos > left ?
 		    left : ctx->vhost->html_len - ctx->html_pos;

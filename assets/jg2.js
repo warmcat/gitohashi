@@ -2075,22 +2075,33 @@ function display(j)
 			s += "<tr><td><main role=\"main\">" + display_summary(j, now) + "</main></td></tr>";
 			break;
 		case "search":
-			s += "<tr><td class='searchfiles'><main role=\"main\"><table>";
 
-				if (j.items[0] && j.items[0].search) {
-					lic = j.items[0].search.length;						
-					for (n = 0; n < lic; n++) {
-						
-						s += "<tr>" +
-							 "<td class='rpathinfo'>" + j.items[0].search[n].matches +
-							 "</td><td class='path'>" + j.items[0].search[n].fp +
-						"</td></tr>";
-						
-
-					}
-				}
+			switch(parseInt(j.indexed, 10)) {
 			
-			s += "</main></td><td>" + html_tree(j, now) + "</td></tr>";
+			case 1:
+			
+				s += "<tr><td class='searchfiles'><main role=\"main\"><table>";
+	
+					if (j.items[0] && j.items[0].search) {
+						lic = j.items[0].search.length;						
+						for (n = 0; n < lic; n++) {
+							
+							s += "<tr>" +
+								 "<td class='rpathinfo'>" + j.items[0].search[n].matches +
+								 "</td><td class='path'>" + j.items[0].search[n].fp +
+							"</td></tr>";
+							
+	
+						}
+					}
+				
+				s += "</main></td><td>" + html_tree(j, now) + "</td></tr>";
+				break;
+				
+			default:
+				s += "<tr><td>generating index</td></tr>";
+				break;
+			}
 			break;
 		default:
 			s += "<tr><td><main role=\"main\">" + html_tree(j, now) + "</main></td></tr>";
@@ -2102,7 +2113,9 @@ function display(j)
 	s += "</table>";
 	
 	document.getElementById("result").innerHTML = s;
-	
+
+
+
 	/* add class-based events now the objects exist */
 
 	document.getElementById("gohsearch").addEventListener("input",

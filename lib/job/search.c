@@ -131,7 +131,7 @@ job_search_check_indexed(struct jg2_ctx *ctx, uint32_t *files, uint32_t *done)
 	if (!ctx->jrepo)
 		return 1;
 
-	pthread_mutex_unlock(&ctx->vhost->lock); /* ------------ vhost unlock */
+	pthread_mutex_lock(&ctx->vhost->lock); /* ================ vhost lock */
 	__jg2_job_compute_cache_hash(ctx, JG2_JOB_SEARCH_TRIE, 1, hex);
 	ongoing = ctx->jrepo->indexing_list;
 	while (ongoing) {
@@ -172,6 +172,8 @@ job_search_start(struct jg2_ctx *ctx)
 	git_oid oid;
 	int n;
 
+	lwsl_err("%s: %p\n", __func__, ctx);
+
 	ctx->trie_fd = -1;
 
 	if (!ctx->hex_oid[0]) {
@@ -183,7 +185,7 @@ job_search_start(struct jg2_ctx *ctx)
 	ctx->lwsac_head = NULL;
 	ctx->indexing = 0;
 
-	pthread_mutex_unlock(&ctx->vhost->lock); /* ------------ vhost unlock */
+	pthread_mutex_lock(&ctx->vhost->lock); /* ================ vhost lock */
 	__jg2_job_compute_cache_hash(ctx, JG2_JOB_SEARCH_TRIE, 1, hex);
 	ongoing = ctx->jrepo->indexing_list;
 	while (ongoing) {
@@ -257,6 +259,7 @@ job_search_start(struct jg2_ctx *ctx)
 		ctx->meta = 1;
 		ctx->meta_last_job = 1;
 		ctx->no_rider = 0;
+		// ctx->partway = 0;
 
 		CTX_BUF_APPEND("{\"ongoing\":[");
 
@@ -511,7 +514,10 @@ job_search(struct jg2_ctx *ctx)
 	int tfi, n, m;
 	struct wl *w;
 
+	lwsl_err("%s: %p\n", __func__, ctx);
+
 	if (ctx->destroying) {
+		lwsl_err("%s: %p: destroying\n", __func__, ctx);
 		job_search_destroy(ctx);
 
 		return 0;
@@ -742,8 +748,11 @@ index:
 
 	ctx->indexing = 0;
 	ctx->index_open_ro = 1;
+	// ctx->partway = 1;
 
 index_reopen:
+
+	lwsl_err("%s: %p: index_reopen\n", __func__, ctx);
 
 	jtf = lws_fts_open(ctx->inline_filename);
 	if (!jtf)

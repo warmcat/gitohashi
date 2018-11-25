@@ -218,6 +218,7 @@ void jg2_safe_libgit2_deinit(void)
 struct jg2_vhost *
 jg2_vhost_create(const struct jg2_vhost_config *config)
 {
+	pthread_mutexattr_t attr;
 	struct jg2_vhost *vhost;
 
 	if (!config->repo_base_dir)
@@ -230,7 +231,9 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 	memset(vhost, 0, sizeof(*vhost));
 	vhost->cfg = *config;
 
-	pthread_mutex_init(&vhost->lock, NULL);
+	pthread_mutexattr_init(&attr);
+	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+	pthread_mutex_init(&vhost->lock, &attr);
 
 	email_vhost_init(vhost);
 

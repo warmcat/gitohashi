@@ -87,8 +87,8 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 {
 	struct lws_client_connect_info i;
 	const char *prot, *opath;
+	char *tmp, u[128];
 	struct lws *wsi;
-	char *tmp;
 
 	lws_snprintf(r->filepath_temp, sizeof(r->filepath_temp), "%s~%d-%p",
 		     r->filepath, (int)getpid(), vhd);
@@ -130,6 +130,8 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 
 	lws_dll_add_front(&r->next, &vhd->head);
 
+	strncpy(u, r->urlpath, sizeof(u) - 1);
+	u[sizeof(u) - 1] = '\0';
 
 	wsi = lws_client_connect_via_info(&i);
 	if (wsi) {
@@ -140,14 +142,14 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 		return 0;
 	}
 
-	lwsl_notice("%s: failed %s %s:%d %s\n", __func__, prot,
-			i.address, i.port, r->urlpath);
+	lwsl_notice("%s: failed %s %s:%d %s\n", __func__, prot, i.address,
+		    i.port, u);
 
 	free(tmp);
 
 	/* wasn't able to get started... we have to clean up req */
 
-	lws_dll_remove(&r->next);
+	// lws_dll_remove(&r->next);
 
 	return 1;
 }
@@ -170,9 +172,7 @@ create_waiting_client_requests(struct vhd_avatar_proxy *vhd)
 
 		lws_dll_remove(&r->next);
 
-		if (__create_waiting_client_request(vhd, r)) {
-			free(r);
-		}
+		__create_waiting_client_request(vhd, r);
 
 	} lws_end_foreach_dll_safe(p, p1);
 
@@ -314,7 +314,16 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
 		 * dirs
 		 */
 
-		pthread_mutex_init(&vhd->lock, NULL);
+		{
+			pthread_mutexattr_t attr;
+
+
+			pthread_mutexattr_init(&attr);
+			pthread_mutexattr_settype(&attr,
+						  PTHREAD_MUTEX_RECURSIVE);
+
+			pthread_mutex_init(&vhd->lock, &attr);
+		}
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:

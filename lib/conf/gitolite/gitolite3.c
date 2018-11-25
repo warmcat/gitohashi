@@ -87,6 +87,7 @@ struct gl3_query {
 int
 jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
 {
+	pthread_mutexattr_t attr;
 	struct passwd *passwd;
 	struct gl3_query q;
 	char home[128];
@@ -95,7 +96,9 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
 
 	lwsl_notice("%s\n", __func__);
 
-	pthread_mutex_init(&jg2_global->lock_query, NULL);
+	pthread_mutexattr_init(&attr);
+	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+	pthread_mutex_init(&jg2_global->lock_query, &attr);
 
 	/* get the uid + gid of the repository dir */
 

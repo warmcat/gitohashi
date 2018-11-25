@@ -96,9 +96,12 @@ CHECK_C_SOURCE_COMPILES(
 set(CMAKE_REQUIRED_FLAGS "-pthread")
 CHECK_C_SOURCE_COMPILES("#define _GNU_SOURCE
 	#include <pthread.h> 
-	int main(void) {
-		pthread_t th = 0;
-		pthread_setname_np(th, NULL);
+	void *dummy(void *arg) { pthread_exit(NULL); return NULL; } 
+	int main(int argc, char *argv[]) {
+		pthread_t th;
+
+		if (pthread_create(&th, NULL, dummy, NULL))
+			pthread_setname_np(th, \"test\");
  
 		return 0;
 	}" JG2_HAS_PTHREAD_SETNAME_NP)
