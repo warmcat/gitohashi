@@ -179,7 +179,7 @@ jg2_repodir_destroy(struct jg2_repodir **phead, struct jg2_repodir *repodir)
 	while (rd) {
 		if (rd == repodir) {
 			*ord = rd->next;
-
+lwsl_err("match %p\n", rd->dcs);
 			if (rd->dcs)
 				lws_diskcache_destroy(&rd->dcs);
 
@@ -457,6 +457,10 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 	if (vhost->repodir && !--vhost->repodir->refcount)
 		jg2_repodir_destroy(&jg2_global.repodir_head, vhost->repodir);
 
+	lwsl_err("%s: vhost->cachedir %p vhost->cachedir->refcount %d\n",
+			__func__, vhost->cachedir,
+			vhost->cachedir->refcount);
+
 	if (vhost->cachedir && !vhost->cachedir->refcount) {
 		jg2_repodir_destroy(&jg2_global.cachedir_head, vhost->cachedir);
 	}
@@ -626,8 +630,9 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 	if (ctx->sr.e[JG2_PE_NAME] && ctx->sr.e[JG2_PE_NAME][0] &&
 	    jg2_acl_check(ctx, ctx->sr.e[JG2_PE_NAME], ctx->acl_user) &&
 	    jg2_acl_check(ctx, ctx->sr.e[JG2_PE_NAME], vhost->cfg.acl_user)) {
-		lwsl_notice("%s: ACL permission denied: %s\n", __func__,
-			    ctx->sr.e[JG2_PE_NAME]);
+		lwsl_notice("%s: ACL permission denied: %s (%s / %s)\n",
+				__func__, ctx->sr.e[JG2_PE_NAME],
+				ctx->acl_user, vhost->cfg.acl_user);
 		m = JG2_CTX_CREATE_ACL_DENIED;
 		goto bail1;
 	}

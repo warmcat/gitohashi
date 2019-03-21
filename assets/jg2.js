@@ -1296,7 +1296,7 @@ function html_commit(j) {
 			 san(j.items[0].body) + "</pre></td></tr>";
 	s += "</table></div>";
 	
-	return s + "<div><pre><main role='main'><code id='do-hljs' class=diff>" +
+	return s + "<div><pre><main role='main'><code id='do-hljs' class=\"diff\">" +
 				san(j.items[0].diff) + "</code></main></pre></div>";
 }
 
@@ -1382,8 +1382,8 @@ function html_tree(j, now)
 	
 	if (j.items[bi] && j.items[bi].blob) {
 		
-		if ((rpath && rpath.substr(rpath.length - 3) == '.md') ||
-			(rpath && rpath.substr(rpath.length - 4) == '.mkd') ||
+		if ((rpath && rpath.substr(rpath.length - 3) === '.md') ||
+			(rpath && rpath.substr(rpath.length - 4) === '.mkd') ||
 			bi) {
 			
 			if (!blog_mode)
@@ -1394,6 +1394,11 @@ function html_tree(j, now)
 			"<td class='doc' id='do-showdown'>" + san_nq(j.items[bi].blob) +
 			"</td></tr></table></div>";
 		} else {
+			var optclass = "";
+			
+			if (rpath && rpath.substr(rpath.length - 4) === ".txt")
+				optclass = "class=\"plaintext\"";
+	
 			s += "<table>";
 			
 			if (j.items[bi + 1] && j.items[bi + 1].contrib) {
@@ -1412,7 +1417,8 @@ function html_tree(j, now)
 			s += "<tr><td><pre><code>"+
 		    "<div id='jglinenumbers' class='jglinenumbers'>"+
 		    "</div></code></pre></td>" +
-			"<td class='doc'><pre><code id='do-hljs'>" + san(j.items[bi].blob) +
+			"<td class='doc'><pre><code id=\"do-hljs\" " + optclass +
+				">" + san(j.items[bi].blob) +
 			"</code></pre></td></tr></table>";
 		}
 	}
@@ -1884,8 +1890,87 @@ function goh_search_input()
 		}
 	}
 	
-	xhr.open("GET", makeurl(reponame, "ac", null, qbranch, null, null, document.getElementById("gohsearch").value));
+	xhr.open("GET", makeurl(reponame, "ac", null, qbranch, null, null,
+			 document.getElementById("gohsearch").value));
 	xhr.send();
+}
+
+function qindexing_update()
+{
+	var xhr = new XMLHttpRequest();
+
+	xhr.onopen = function(e) {
+		xhr.setRequestHeader('cache-control', 'max-age=0');
+	}
+	xhr.onload = function(e) {
+		var sp1 = xhr.responseText.split("class=\"hidden-tiger\">"),
+		    sp2 = sp1[1].split("</div>");
+		
+		console.log(sp2[0]);
+		jj = JSON.parse(sp2[0]);
+		
+		search_results(jj);
+	}
+	
+	xhr.open("GET", makeurl(reponame, "search", null, qbranch, null, null,
+			 qsearch));
+	xhr.send();
+}
+
+function search_results(j)
+{
+	var s = "", qi = document.getElementById("qindexing");
+	var now = new Date().getTime() / 1000;
+
+	switch(parseInt(j.indexed, 10)) {
+	
+	case 1:
+	
+		s += "<tr><td class='searchfiles'><main role=\"main\"><table>";
+
+			if (j.items[0] && j.items[0].search && j.items[0].search[0]) {
+				lic = j.items[0].search.length;						
+				for (n = 0; n < lic; n++) {
+					var link = "";
+					
+					link += j.items[0].search[n].fp;
+					
+					s += "<tr>" +
+						 "<td class='rpathinfo'>" + j.items[0].search[n].matches +
+						 "</td><td class='path'><a href=\"" +
+						 makeurl(reponame, "tree", san(link),
+								 qbranch, null, null, qsearch) + "\">" +
+						 san(link) +
+					"</a></td></tr>";
+				}
+			}
+		
+		s += "</main></td><td>" + html_tree(j, now) + "</td></tr>";
+		break;
+		
+	default:
+				/* an index is being built... */
+				
+				s = "<table><tr><td><img class='spinner'></td><td>" +
+					"<table><tr><td>Indexing</td></tr><tr><td>" +
+					"<div id='bar1' class='bar1'>" +
+					"<div id='bar2' class='bar2'>" +
+					j.index_done + "&nbsp;/&nbsp;" + j.index_files +
+					"</div></div></td></tr></table>" +
+					"</td></tr></table>" +
+					"</div></td></tr>";
+			
+				setTimeout(qindexing_update, 300);
+			
+				break;
+	}
+	
+	if (qi) {
+		qi.innerHTML = s;
+		return "";
+	}
+
+	return s;
 }
 
 function display(j)
@@ -2074,34 +2159,12 @@ function display(j)
 		case "summary":
 			s += "<tr><td><main role=\"main\">" + display_summary(j, now) + "</main></td></tr>";
 			break;
-		case "search":
 
-			switch(parseInt(j.indexed, 10)) {
-			
-			case 1:
-			
-				s += "<tr><td class='searchfiles'><main role=\"main\"><table>";
-	
-					if (j.items[0] && j.items[0].search) {
-						lic = j.items[0].search.length;						
-						for (n = 0; n < lic; n++) {
-							
-							s += "<tr>" +
-								 "<td class='rpathinfo'>" + j.items[0].search[n].matches +
-								 "</td><td class='path'>" + j.items[0].search[n].fp +
-							"</td></tr>";
-							
-	
-						}
-					}
-				
-				s += "</main></td><td>" + html_tree(j, now) + "</td></tr>";
-				break;
-				
-			default:
-				s += "<tr><td>generating index</td></tr>";
-				break;
-			}
+		case "search":
+			s += "<tr><td><div id=qindexing>" +
+					search_results(j) +
+				 "</div></td></tr>"
+					;
 			break;
 		default:
 			s += "<tr><td><main role=\"main\">" + html_tree(j, now) + "</main></td></tr>";
@@ -2195,7 +2258,24 @@ function display(j)
 		if (typeof hljs !== "undefined") {
 			var hh = document.getElementById("do-hljs");
 			if (hh) {
+				
+				/* workaround to stop hljs overriding the code class
+				 * restriction */
+				
+				if (hh.className)
+					hljs.configure({
+						tabReplace: "        ",
+						languages: [ hh.className ]
+					})
+				else
+					hljs.configure({
+						tabReplace: "        "
+					})
+				
 				hljs.highlightBlock(hh);
+				
+			//	if (qsearch)
+				//	hh = goh_search_highlight(hh, qsearch);
 
 				var e = document.getElementById("jglinenumbers"),
 					count, n = 1, sp;

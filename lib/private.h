@@ -354,6 +354,7 @@ struct jg2_ctx {
 	struct ongoing_index *ongoing;
 
 	/* search */
+	char trie_filepath[256];
 	struct lws_fts_result *result;
 	struct lws_fts_result_autocomplete *ac;
 	struct lws_fts_result_filepath *fp;
@@ -370,6 +371,7 @@ struct jg2_ctx {
 	lws_list_ptr contrib;
 #endif
 	int fd_cache;
+	int job_cache_query;
 	char *cache_written_p;
 	size_t existing_cache_pos;
 	size_t existing_cache_size;

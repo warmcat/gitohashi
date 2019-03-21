@@ -125,7 +125,8 @@ __jg2_job_hash_visible_repos(struct jg2_ctx *ctx)
 		char *p = (char *)(rei + 1);
 
 		if (!jg2_acl_check(ctx, p, ctx->acl_user))
-			vh->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)p, strlen(p));
+			vh->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)p,
+					strlen(p));
 
 		lws_list_ptr_advance(lp);
 	}
@@ -218,7 +219,8 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 			lws_list_ptr lp = ctx->vhost->repodir->rei_head;
 
 			while (lp) {
-				struct repo_entry_info *rei = lp_to_rei(lp, next);
+				struct repo_entry_info *rei =
+							lp_to_rei(lp, next);
 				char *p = (char *)(rei + 1);
 				size_t n = LWS_ARRAY_SIZE(rei->conf_len);
 
@@ -330,19 +332,20 @@ jg2_ctx_set_job(struct jg2_ctx *ctx, jg2_job_enum job, const char *hex_oid,
 	if (ctx->sr.e[JG2_PE_MODE] && !strcmp(ctx->sr.e[JG2_PE_MODE], "ac"))
 		return;
 
-	pthread_mutex_lock(&ctx->vhost->lock); /* ================ vhost lock */
+	pthread_mutex_lock(&ctx->vhost->lock); /* =================== vh lock */
 	__jg2_job_compute_cache_hash(ctx, job, count, md5_hex);
 
 	ctx->existing_cache_pos = 0;
-	if (lws_diskcache_query(ctx->vhost->cachedir->dcs,
+	ctx->job_cache_query = lws_diskcache_query(ctx->vhost->cachedir->dcs,
 				ctx->flags & JG2_CTX_FLAG_BOT, md5_hex,
 				&ctx->fd_cache, ctx->cache,
 				sizeof(ctx->cache) - 1,
-				&ctx->existing_cache_size) ==
-						LWS_DISKCACHE_QUERY_EXISTS) {
+				&ctx->existing_cache_size);
+
+	if (ctx->job_cache_query == LWS_DISKCACHE_QUERY_EXISTS) {
 		ctx->job = job_spool_from_cache;
 		if (!ctx->sr.e[JG2_PE_MODE] || !jg2_job_naked(ctx)) {
-			pthread_mutex_unlock(&ctx->vhost->lock); /*vhost unlock */
+			pthread_mutex_unlock(&ctx->vhost->lock); /* vh unlock */
 			meta_header(ctx);
 
 			return;
@@ -679,7 +682,7 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 	if (!ctx->no_rider && !jg2_job_naked(ctx)) {
 		CTX_BUF_APPEND("],\"g\":%8lu,\"chitpc\":%8u,\"ehitpc\":%8u",
 			       (unsigned long)(timeval_us(&t2) -
-			       timeval_us(&ctx->tv_gen)), pc, pc1);
+			         timeval_us(&ctx->tv_gen)), pc, pc1);
 
 		if (ctx->sr.e[JG2_PE_NAME]) {
 
@@ -689,8 +692,8 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 
 			if (idx == LWS_DISKCACHE_QUERY_ONGOING)
 				CTX_BUF_APPEND(", \"index_files\":%d,\n"
-					       "\"index_done\":%d\n",
-						files, done);
+					       "\"index_done\":%d\n", files,
+					       done);
 		}
 
 		CTX_BUF_APPEND("}\n\n");
@@ -718,7 +721,7 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 
 int
 jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
-		char *outlive)
+	     char *outlive)
 {
 	const char *mode, *vid, *reponame, *search;
 	size_t m = 0, left = len - 1;
@@ -762,8 +765,8 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 			       "repository: %s, mode: %s, path: %s, rev: %s\">",
 			       reponame ? reponame : "-", mode ? mode : "-",
 			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) ?
-			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) : "-",
-			       vid ? vid : "-");
+			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) :
+				       "-", vid ? vid : "-");
 
 		ctx->html_pos += JG2_HTML_META_LEN;
 		ctx->html_state = HTML_STATE_HTML_HEADER;
@@ -901,7 +904,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 
 		/*
 		 * final: 0 = still going, 1 = final, 2 = final send but stay
-		 * 		on job state
+		 * 					  on job state
 		 */
 		ctx->partway = ctx->final != 1;
 		if (!ctx->meta_last_job)
@@ -914,20 +917,20 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 			return 1;
 		}
 
-		if (ctx->partway) {
-			lwsl_err("%s: partway (final %d)\n", __func__, ctx->final);
+		if (ctx->partway)
 			break;
-		}
 
 		switch (ctx->job_state) {
 		case EMIT_STATE_SUMMARY:
 			ctx->job_state = EMIT_STATE_SUMMARY_LOG;
-			jg2_ctx_set_job(ctx, JG2_JOB_LOG,
-					"refs/heads/master", 10,
-					JG2_JOB_FLAG_CHAINED |
-					JG2_JOB_FLAG_FINAL);
+			jg2_ctx_set_job(ctx, JG2_JOB_LOG, "refs/heads/master",
+					10, JG2_JOB_FLAG_CHAINED |
+					    JG2_JOB_FLAG_FINAL);
 			break;
 		case EMIT_STATE_TREE:
+
+			ctx->u.obj = NULL;
+
 			/*
 			 * after processing the ls for a tree, we might have
 			 * found a doc file we want to show inline additionally
@@ -939,19 +942,19 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 						ctx->sr.e[JG2_PE_PATH]);
 
 				ctx->job_state = EMIT_STATE_TREE;
-				jg2_ctx_set_job(ctx, JG2_JOB_TREE,
-						vid, 0, JG2_JOB_FLAG_CHAINED |
+				jg2_ctx_set_job(ctx, JG2_JOB_TREE, vid, 0,
+						JG2_JOB_FLAG_CHAINED |
 						JG2_JOB_FLAG_FINAL);
 
 				ctx->meta = 1;
 				break;
 			}
 
-			if (search && !ctx->did_sat && ctx->sr.e[JG2_PE_PATH]) {
-lwsl_err("doing chained search %s %s\n", search, ctx->sr.e[JG2_PE_PATH]);
+			if (ctx->job_cache_query != LWS_DISKCACHE_QUERY_EXISTS &&
+			    search && !ctx->did_sat && ctx->sr.e[JG2_PE_PATH]) {
 				ctx->job_state = EMIT_STATE_TREE;
-				jg2_ctx_set_job(ctx, JG2_JOB_SEARCH,
-						vid, 0, JG2_JOB_FLAG_CHAINED |
+				jg2_ctx_set_job(ctx, JG2_JOB_SEARCH, vid, 0,
+						JG2_JOB_FLAG_CHAINED |
 						JG2_JOB_FLAG_FINAL);
 				ctx->did_sat = 1;
 				ctx->meta = 1;
@@ -960,10 +963,9 @@ lwsl_err("doing chained search %s %s\n", search, ctx->sr.e[JG2_PE_PATH]);
 
 			if (ctx->blame_after_tree && !ctx->did_bat &&
 			    ctx->sr.e[JG2_PE_PATH] != ctx->inline_filename) {
-				lwsl_err("doing blame %s %s\n", search, ctx->sr.e[JG2_PE_PATH]);
 				ctx->job_state = EMIT_STATE_BLAME;
-				jg2_ctx_set_job(ctx, JG2_JOB_BLAME,
-						vid, 0, JG2_JOB_FLAG_CHAINED |
+				jg2_ctx_set_job(ctx, JG2_JOB_BLAME, vid, 0,
+						JG2_JOB_FLAG_CHAINED |
 						JG2_JOB_FLAG_FINAL);
 				ctx->did_bat = 1;
 				ctx->meta = 1;
@@ -972,7 +974,6 @@ lwsl_err("doing chained search %s %s\n", search, ctx->sr.e[JG2_PE_PATH]);
 
 			/* fallthru */
 		default:
-			lwsl_err("next job default\n");
 			/*
 			 * This is the end for a single JSON job, chained or
 			 * just on its own.  Finish up the cache file if we
@@ -982,13 +983,11 @@ lwsl_err("doing chained search %s %s\n", search, ctx->sr.e[JG2_PE_PATH]);
 			if (ctx->fd_cache != -1)
 				cache_write_complete(ctx);
 
-			if (ctx->flags & JG2_CTX_FLAG_HTML) {
-				lwsl_err("says trailer\n");
+			if (ctx->flags & JG2_CTX_FLAG_HTML)
 				ctx->html_state = HTML_STATE_HTML_TRAILER;
-			} else {
-				lwsl_err("says completed\n");
+			else
 				ctx->html_state = HTML_STATE_COMPLETED;
-			}
+
 			break;
 		}
 		break;

@@ -98,10 +98,12 @@ treewalk_cb(const char *root, const git_tree_entry *entry, void *payload)
 static void
 job_tree_destroy(struct jg2_ctx *ctx)
 {
+	lwsl_err("%s\n", __func__);
 	lwsac_free(&ctx->lwsac_head);
 	ctx->sorted_head = NULL;
 
 	if (ctx->u.tree) {
+		lwsl_err("%s: free tree %p\n", __func__, ctx->u.tree);
 		git_tree_free(ctx->u.tree);
 		ctx->u.tree = NULL;
 	}
@@ -170,6 +172,8 @@ job_tree_start(struct jg2_ctx *ctx)
 		goto bail;
 	}
 
+	lwsl_err("%s: touched tree %p +++++\n", __func__, u.tree);
+
 	git_commit_free(c);
 
 	lwsl_notice("%s\n", __func__);
@@ -191,8 +195,9 @@ job_tree_start(struct jg2_ctx *ctx)
 			goto bail;
 		}
 
+		lwsl_err("%s: free tree 1 %p\n", __func__, u.tree);
 		git_tree_free(u.tree);
-		u.obj = NULL;
+		u.tree = NULL;
 
 		e = git_tree_entry_to_object(&u.obj, ctx->jrepo->repo, te);
 		git_tree_entry_free(te);
@@ -200,6 +205,8 @@ job_tree_start(struct jg2_ctx *ctx)
 			lwsl_err("git_tree_entry_to_object failed\n");
 			goto bail;
 		}
+
+		lwsl_err("%s: touch tree 1 %p\n", __func__, u.tree);
 	}
 
 	ctx->u = u;

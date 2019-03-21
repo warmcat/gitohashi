@@ -49,7 +49,7 @@
 #include <sys/stat.h>
 
 struct req {
-	struct lws_dll next;
+	struct lws_dll2 next;
 	char filepath_temp[256];
 	char filepath[192];
 	char urlpath[128];
@@ -76,8 +76,8 @@ struct vhd_avatar_proxy {
 
 	pthread_mutex_t lock; /* protect the dlls */
 
-	struct lws_dll head;
-	struct lws_dll head_waiting;
+	struct lws_dll2_owner owner;
+	struct lws_dll2_owner owner_waiting;
 };
 
 static const struct lws_protocols protocols[];
@@ -128,7 +128,7 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 	  */
 	i.userdata = r;
 
-	lws_dll_add_front(&r->next, &vhd->head);
+	lws_dll2_add_head(&r->next, &vhd->owner);
 
 	strncpy(u, r->urlpath, sizeof(u) - 1);
 	u[sizeof(u) - 1] = '\0';
@@ -157,20 +157,20 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 static int
 create_waiting_client_requests(struct vhd_avatar_proxy *vhd)
 {
-	if (!vhd->head_waiting.next)
+	if (!vhd->owner_waiting.head)
 		return 0;
 
 	pthread_mutex_lock(&vhd->lock); /* ========================= vhd lock */
 
 	/* on the list of waiting requests? */
 
-	lws_start_foreach_dll_safe(struct lws_dll *, p, p1,
-				   vhd->head_waiting.next) {
+	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+				   vhd->owner_waiting.head) {
 		struct req *r = (struct req *)p;
 
 		/* switch to the list of active requests */
 
-		lws_dll_remove(&r->next);
+		lws_dll2_remove(&r->next);
 
 		__create_waiting_client_request(vhd, r);
 
@@ -228,7 +228,7 @@ mention(struct lws_protocols *pcol, struct lws_vhost *vh, const char *path)
 
 	/* on the list of client fetches? */
 
-	lws_start_foreach_dll(struct lws_dll *, p, vhd->head.next) {
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->owner.head) {
 		struct req *r = (struct req *)p;
 
 		if (!strcmp(r->filepath, filepath))
@@ -238,7 +238,7 @@ mention(struct lws_protocols *pcol, struct lws_vhost *vh, const char *path)
 
 	/* on the list of waiting requests? */
 
-	lws_start_foreach_dll(struct lws_dll *, p, vhd->head_waiting.next) {
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->owner_waiting.head) {
 		struct req *r = (struct req *)p;
 
 		if (!strcmp(r->filepath, filepath))
@@ -266,7 +266,7 @@ mention(struct lws_protocols *pcol, struct lws_vhost *vh, const char *path)
 	lwsl_debug("%s: queuing fetch of %s %s\n", __func__, req->urlpath,
 		    req->filepath);
 
-	lws_dll_add_front(&req->next, &vhd->head_waiting);
+	lws_dll2_add_head(&req->next, &vhd->owner_waiting);
 
 	lws_cancel_service(vhd->context);
 
@@ -398,7 +398,7 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
 	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP_READ:
 		lwsl_debug("RECEIVE_CLIENT_HTTP_READ: read %d\n", (int)len);
 		req = (struct req *)user;
-		if (write(req->fd, in, len) != (ssize_t)len)
+		if (req && write(req->fd, in, len) != (ssize_t)len)
 			goto nope;
 
 		return 0; /* don't passthru */
@@ -412,7 +412,7 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
 
 			req = (struct req *)user;
 
-			if (lws_http_client_read(wsi, &px, &lenx) < 0)
+			if (req && lws_http_client_read(wsi, &px, &lenx) < 0)
 				goto nope;
 		}
 		return 0; /* don't passthru */
@@ -420,22 +420,25 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
 	case LWS_CALLBACK_CLIENT_HTTP_DROP_PROTOCOL:
 		lwsl_debug("LWS_CALLBACK_CLIENT_HTTP_DROP_PROTOCOL %p\n", wsi);
 		req = (struct req *)user;
+		if (!req)
+			return 0;
 		if (req->fd != -1)
 			close(req->fd);
 
 		pthread_mutex_lock(&vhd->lock); /* ================= vhd lock */
 		req->fd = -1;
-		lws_dll_remove(&req->next);
+		lws_dll2_remove(&req->next);
 		pthread_mutex_unlock(&vhd->lock); /* ------------- vhd unlock */
 
 		free(req);
+		lws_set_wsi_user(wsi, NULL);
 
 		return 0;
 
 	case LWS_CALLBACK_COMPLETED_CLIENT_HTTP:
 		lwsl_debug("LWS_CALLBACK_COMPLETED_CLIENT_HTTP %p\n", wsi);
 		req = (struct req *)user;
-		if (req->fd != -1) {
+		if (req && req->fd != -1) {
 			if (rename(req->filepath_temp, req->filepath))
 				return 0;
 		}

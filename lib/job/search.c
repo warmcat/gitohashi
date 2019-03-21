@@ -33,37 +33,53 @@
 #include <sys/types.h>
 
 static void
-job_search_destroy(struct jg2_ctx *ctx)
+remove_ongoing(struct jg2_ctx *ctx)
 {
-	int n = ctx->sp;
 	struct ongoing_index **pon;
+	int n = ctx->destroying;
+
+	if (!ctx->ongoing)
+		return;
 
 	/*
 	 * on the ctx->destroying / __jg2_ctx_destroy() path, the vh lock
 	 * is already held
 	 */
 
-	if (!ctx->destroying)
+	if (!n)
 		pthread_mutex_lock(&ctx->vhost->lock); /* ======== vhost lock */
 	pon = &ctx->jrepo->indexing_list;
 	while (*pon) {
 		if (*pon == ctx->ongoing) {
 			*pon = ctx->ongoing->next;
+			lwsl_err("---------- ongoing free %p\n", ctx->ongoing);
 			ctx->ongoing = NULL;
 			free(ctx->ongoing);
 			break;
 		}
 		pon = &(*pon)->next;
 	}
-	if (!ctx->destroying)
+	if (!n)
 		pthread_mutex_unlock(&ctx->vhost->lock); /* ---- vhost unlock */
+}
+
+static void
+job_search_destroy(struct jg2_ctx *ctx)
+{
+	int n = ctx->sp;
+
+	remove_ongoing(ctx);
 
 	while (n >= 0) {
 		if (ctx->stack[n].tree) {
 			if (ctx->stack[n].path)
 				free(ctx->stack[n].path);
-			if (ctx->stack[n].tree)
-				git_tree_free(ctx->stack[n].tree);
+			//if (ctx->stack[n].tree)
+			//	git_tree_free(ctx->stack[n].tree);
+			/*
+			 * libgit2 docs say don't free lev->tree... it seems it
+			 * is cached and removed by lru inside libgit2
+			 */
 			ctx->stack[n].tree = NULL;
 		}
 		n--;
@@ -195,15 +211,22 @@ job_search_start(struct jg2_ctx *ctx)
 	}
 	if (!ongoing) {
 		ctx->existing_cache_pos = 0;
+
+		/*
+		 * this is creating / fetching the trie index file, not the
+		 * query
+		 */
+
 		n = lws_diskcache_query(ctx->vhost->cachedir->dcs, 0, hex,
-					&ctx->trie_fd, ctx->inline_filename,
-				        sizeof(ctx->inline_filename) - 1,
+					&ctx->trie_fd, ctx->trie_filepath,
+				        sizeof(ctx->trie_filepath) - 1,
 				        &ctx->existing_cache_size);
 	} else
 		n = LWS_DISKCACHE_QUERY_ONGOING;
 
 	if (n == LWS_DISKCACHE_QUERY_CREATING) {
 		ongoing = malloc(sizeof(*ongoing));
+		lwsl_err("---------- ongoing alloc %p\n", ongoing);
 		if (ongoing) {
 			ongoing->started = time(NULL);
 			strcpy(ongoing->hash, hex);
@@ -231,6 +254,18 @@ job_search_start(struct jg2_ctx *ctx)
 			ctx->meta = 1;
 			ctx->meta_last_job = 1;
 			ctx->no_rider = 0;
+
+			/*
+			 * This "ongoing" result we ended up with cannot be
+			 * cached after all... it's a transient situation.
+			 *
+			 * Close and delete the temp cache file related to
+			 * it (this is not the cached index file... this is the
+			 * cached query response, currently "ongoing")
+			 */
+			close(ctx->fd_cache);
+			ctx->fd_cache = -1;
+			unlink(ctx->cache);
 
 			CTX_BUF_APPEND("{\"creating\":[");
 		}
@@ -261,16 +296,28 @@ job_search_start(struct jg2_ctx *ctx)
 		ctx->no_rider = 0;
 		// ctx->partway = 0;
 
+		/*
+		 * This "ongoing" result we ended up with cannot be cached
+		 * after all... it's a transient situation.
+		 *
+		 * Close and delete the temp cache file related to
+		 * it (this is not the cached index file... this is the
+		 * cached query response, currently "ongoing")
+		 */
+		close(ctx->fd_cache);
+		ctx->fd_cache = -1;
+		unlink(ctx->cache);
+
 		CTX_BUF_APPEND("{\"ongoing\":[");
 
 		return 0;
 	}
 
-	lwsl_notice("%s: trie cache '%s'\n", __func__, ctx->inline_filename);
+	lwsl_notice("%s: trie cache '%s'\n", __func__, ctx->trie_filepath);
 
 	if (n == LWS_DISKCACHE_QUERY_EXISTS) {
 		lwsl_notice("%s: trie file %s exists in cache\n", __func__,
-				ctx->inline_filename);
+				ctx->trie_filepath);
 
 		/*
 		 * we don't need to do the indexing action... the start
@@ -285,7 +332,7 @@ job_search_start(struct jg2_ctx *ctx)
 	/* we have to create the index */
 
 	lwsl_notice("%s: trie file %s must be created\n", __func__,
-			ctx->inline_filename);
+			ctx->trie_filepath);
 
 	/* priority 1: branch (refs/heads/) */
 
@@ -360,7 +407,11 @@ job_search_start(struct jg2_ctx *ctx)
 
 			free(lev->path);
 			lev->path = NULL;
-			git_tree_free(lev->tree);
+			// git_tree_free(lev->tree);
+			/*
+			 * libgit2 docs say don't free lev->tree... it seems it
+			 * is cached and removed by lru inside libgit2
+			 */
 			lev->tree = NULL;
 			lev->index = 0;
 
@@ -531,6 +582,7 @@ job_search(struct jg2_ctx *ctx)
 	if (ctx->onetime) {
 		ctx->onetime = 0;
 		meta_trailer(ctx, "\n]");
+		job_search_destroy(ctx);
 		ctx->final = 2;
 		return 0;
 	}
@@ -586,7 +638,8 @@ job_search(struct jg2_ctx *ctx)
 				       ctx->subsequent ? ',' : ' ',
 				       ((char *)(ctx->fp + 1)) +
 						       ctx->fp->matches_length,
-				       ctx->fp->matches, ctx->fp->lines_in_file);
+				       ctx->fp->matches,
+				       ctx->fp->lines_in_file);
 
 			ctx->subsequent = 1;
 			ctx->fp = ctx->fp->next;
@@ -617,7 +670,9 @@ index:
 
 	do {
 		struct tree_iter_level *lev = &ctx->stack[ctx->sp];
+		int dr;
 
+		lwsl_err("%s: ctx->sp %d\n", __func__, ctx->sp);
 		te = git_tree_entry_byindex(lev->tree, lev->index++);
 		if (!te) {
 
@@ -625,7 +680,10 @@ index:
 
 			free(lev->path);
 			lev->path = NULL;
-			git_tree_free(lev->tree);
+			/*
+			 * libgit2 docs say don't free lev->tree... it seems it
+			 * is cached and removed by lru inside libgit2
+			 */
 			lev->tree = NULL;
 			lev->index = 0;
 
@@ -715,13 +773,17 @@ index:
 			ctx->size = git_blob_rawsize(ctx->u.blob);
 
 			m = lws_snprintf(path, sizeof(path), "%s%s", lev->path,
-				     git_tree_entry_name(te));
+					 git_tree_entry_name(te));
 
 			lwsl_notice("indexing %s\n", path + 1);
 			tfi = lws_fts_file_index(ctx->t, path + 1, m - 1,
-						  whitelist[n].priority);
+						 whitelist[n].priority);
 
-			if (lws_fts_fill(ctx->t, tfi, ctx->body, ctx->size)) {
+			dr = lws_fts_fill(ctx->t, tfi, ctx->body, ctx->size);
+			git_blob_free(ctx->u.blob);
+			ctx->u.blob = NULL;
+
+			if (dr) {
 				lwsl_err("%s: OOM\n", __func__);
 				goto bail;
 			}
@@ -742,7 +804,9 @@ index:
 
 	close(ctx->trie_fd);
 	ctx->trie_fd = -1;
-	lws_diskcache_finalize_name(ctx->inline_filename);
+	lws_diskcache_finalize_name(ctx->trie_filepath);
+
+	remove_ongoing(ctx);
 
 	lwsl_notice("%s: completed OK\n", __func__);
 
@@ -754,7 +818,7 @@ index_reopen:
 
 	lwsl_err("%s: %p: index_reopen\n", __func__, ctx);
 
-	jtf = lws_fts_open(ctx->inline_filename);
+	jtf = lws_fts_open(ctx->trie_filepath);
 	if (!jtf)
 		goto bail;
 

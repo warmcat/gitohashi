@@ -133,6 +133,7 @@ int main(int argc, const char **argv)
 	}
 
 	lws_context_destroy(context);
+	context = NULL;
 
 	return 0;
 }
