@@ -172,11 +172,11 @@ job_tree_start(struct jg2_ctx *ctx)
 		goto bail;
 	}
 
-	lwsl_err("%s: touched tree %p +++++\n", __func__, u.tree);
+//	lwsl_err("%s: touched tree %p +++++\n", __func__, u.tree);
 
 	git_commit_free(c);
 
-	lwsl_notice("%s\n", __func__);
+//	lwsl_notice("%s\n", __func__);
 
 	if (!ctx->did_inline && ctx->inline_filename[0]) {
 		epath = ctx->inline_filename;
@@ -195,7 +195,7 @@ job_tree_start(struct jg2_ctx *ctx)
 			goto bail;
 		}
 
-		lwsl_err("%s: free tree 1 %p\n", __func__, u.tree);
+//		lwsl_err("%s: free tree 1 %p\n", __func__, u.tree);
 		git_tree_free(u.tree);
 		u.tree = NULL;
 
@@ -206,7 +206,7 @@ job_tree_start(struct jg2_ctx *ctx)
 			goto bail;
 		}
 
-		lwsl_err("%s: touch tree 1 %p\n", __func__, u.tree);
+//		lwsl_err("%s: touch tree 1 %p\n", __func__, u.tree);
 	}
 
 	ctx->u = u;
@@ -228,7 +228,7 @@ job_tree_start(struct jg2_ctx *ctx)
 		ctx->size = git_blob_rawsize(u.blob);
 		ctx->pos = 0;
 
-		lwsl_notice("%s: blob\n", __func__);
+//		lwsl_notice("%s: blob\n", __func__);
 
 		ctx->meta_last_job = 1;
 
@@ -317,7 +317,7 @@ job_tree_start(struct jg2_ctx *ctx)
 	jg2_json_oid(&oid, ctx);
 	CTX_BUF_APPEND(",\"tree\": [");
 
-	lwsl_notice("%s: exit OK\n", __func__);
+//	lwsl_notice("%s: exit OK\n", __func__);
 
 	return 0;
 

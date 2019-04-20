@@ -631,6 +631,7 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 	struct timeval t2;
 	int pc = 0, pc1 = 0, idx;
 	uint32_t files, done;
+	const char *mode = jg2_ctx_get_path(ctx, JG2_PE_MODE, NULL, 0);
 
 	if (lws_ptr_diff(ctx->end, ctx->p) < JG2_RESERVE_SEAL)
 		lwsl_err("%s: JG2_RESERVE_SEAL %d but only %d left\n", __func__,
@@ -680,7 +681,9 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 		pc1 = (ctx->vhost->etag_hits * 100) / ctx->vhost->etag_tries;
 
 	if (!ctx->no_rider && !jg2_job_naked(ctx)) {
-		CTX_BUF_APPEND("],\"g\":%8lu,\"chitpc\":%8u,\"ehitpc\":%8u",
+		if (!mode || strcmp(mode, "blame")) {
+			CTX_BUF_APPEND("]");
+		CTX_BUF_APPEND(",\"g\":%8lu,\"chitpc\":%8u,\"ehitpc\":%8u",
 			       (unsigned long)(timeval_us(&t2) -
 			         timeval_us(&ctx->tv_gen)), pc, pc1);
 
@@ -697,6 +700,7 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 		}
 
 		CTX_BUF_APPEND("}\n\n");
+		}
 	}
 
 	ctx->started = ctx->meta = 0;
@@ -730,7 +734,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 	jg2_job job_in;
 	int more;
 
-	lwsl_err("%s\n", __func__);
+//	lwsl_err("%s\n", __func__);
 
 	*used = 0;
 
@@ -865,7 +869,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 
 	case HTML_STATE_JSON:
 
-		lwsl_err("%s: STATE_JSON\n", __func__);
+		// lwsl_err("%s: STATE_JSON\n", __func__);
 
 		if (!jg2_ctx_get_job(ctx))
 			break;
@@ -896,7 +900,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 			ctx->meta_last_job = 1;
 			ctx->partway = 0;
 		}
-		lwsl_err("%s: job says %d\n", __func__, more);
+		// lwsl_err("%s: job says %d\n", __func__, more);
 
 		ctx->us_gen += timeval_us(&t2) - timeval_us(&ctx->tv_last);
 
@@ -993,7 +997,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 		break;
 
 	case HTML_STATE_HTML_TRAILER:
-		lwsl_err("HTML_STATE_HTML_TRAILER\n");
+		// lwsl_err("HTML_STATE_HTML_TRAILER\n");
 		left = lws_ptr_diff(ctx->end, ctx->p);
 		m = ctx->vhost->html_len - ctx->html_pos > left ?
 		    left : ctx->vhost->html_len - ctx->html_pos;

@@ -2549,7 +2549,7 @@ document.addEventListener("DOMContentLoaded", function() {
 //	ws = new_ws(get_appropriate_ws_url(window.location.pathname), "lws-gitws");
 	 
 		if (init) {
-			// console.log("parsed initial json" + init.textContent);
+			console.log("parsed initial json" + init.textContent);
 			j = JSON.parse(init.textContent);
 			parse_json(j);
 			display(j);

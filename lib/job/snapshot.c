@@ -344,8 +344,8 @@ job_snapshot(struct jg2_ctx *ctx)
 			if (use > avail)
 				use = avail;
 
-			lwsl_notice("%s: replay from lac use %d\n",
-					__func__, (int)use);
+			// lwsl_notice("%s: replay from lac use %d\n",
+			//		__func__, (int)use);
 
 			memcpy(ctx->p, ((char *)ctx->lac) + ctx->lacpos,
 			       use);
