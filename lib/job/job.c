@@ -885,8 +885,8 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 		if (more < 0) {
 			char pure[256];
 
-			lwsl_err("get_job failed %d (%d) %s\n", more,
-				 ctx->job_state, ctx->status);
+			lwsl_notice("%s: get_job failed %d (%d) %s\n", __func__,
+				    more, ctx->job_state, ctx->status);
 
 			meta_header(ctx);
 			job_common_header(ctx);
@@ -941,7 +941,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 			 */
 			if (ctx->inline_filename[0] && !ctx->did_inline) {
 				/* we found a document we want to show inline */
-				lwsl_err("doing inline %s %s\n",
+				lwsl_debug("doing inline %s %s\n",
 						ctx->inline_filename,
 						ctx->sr.e[JG2_PE_PATH]);
 

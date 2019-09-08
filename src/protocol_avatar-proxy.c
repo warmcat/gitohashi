@@ -147,9 +147,10 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 
 	free(tmp);
 
-	/* wasn't able to get started... we have to clean up req */
+	/* wasn't able to get started... destroy req */
 
-	// lws_dll_remove(&r->next);
+	lws_dll2_remove(&r->next);
+	free(r);
 
 	return 1;
 }

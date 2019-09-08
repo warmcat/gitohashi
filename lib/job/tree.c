@@ -98,12 +98,11 @@ treewalk_cb(const char *root, const git_tree_entry *entry, void *payload)
 static void
 job_tree_destroy(struct jg2_ctx *ctx)
 {
-	lwsl_err("%s\n", __func__);
 	lwsac_free(&ctx->lwsac_head);
 	ctx->sorted_head = NULL;
 
 	if (ctx->u.tree) {
-		lwsl_err("%s: free tree %p\n", __func__, ctx->u.tree);
+		lwsl_debug("%s: free tree %p\n", __func__, ctx->u.tree);
 		git_tree_free(ctx->u.tree);
 		ctx->u.tree = NULL;
 	}
@@ -186,8 +185,8 @@ job_tree_start(struct jg2_ctx *ctx)
 
 	if (epath && epath[0]) {
 		if (git_tree_entry_bypath(&te, u.tree, epath)) {
-			lwsl_err("%s: git_tree_entry_bypath %s failed\n",
-				 __func__, epath);
+			lwsl_info("%s: git_tree_entry_bypath %s failed\n",
+				  __func__, epath);
 			lws_snprintf(ctx->status, sizeof(ctx->status),
 				     "Path '%s' doesn't exist in revision '%s'",
 				     epath, ctx->hex_oid);
@@ -365,7 +364,7 @@ job_tree(struct jg2_ctx *ctx)
 	}
 
 	if (!ctx->partway && job_tree_start(ctx)) {
-		lwsl_err("%s: start failed (%s)\n", __func__, ctx->hex_oid);
+		lwsl_info("%s: start failed (%s)\n", __func__, ctx->hex_oid);
 		return -1;
 	}
 
