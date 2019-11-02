@@ -54,13 +54,26 @@ a_write(struct archive *a, void *user, const void *p, size_t len)
 	struct jg2_ctx *ctx = (struct jg2_ctx *)user;
 	size_t avail = lws_ptr_diff(ctx->end, ctx->p), use = len;
 
-	if (avail < use)
-		use = avail;
+	if (!ctx->lwsac_head) {
 
-	memcpy(ctx->p, p, use);
-	ctx->p += use;
+		if (avail < use)
+			use = avail;
 
-	if (use < len) {
+		memcpy(ctx->p, p, use);
+		ctx->p += use;
+
+		lwsl_debug("%s: directly used: %zu\n", __func__, use);
+	} else
+		use = 0;
+
+	/*
+	 * too much, put it in a lac, and if we started with a lac,
+	 * put it all in the lac even if a later bit is small enough
+	 */
+
+	if (use < len || ctx->lwsac_head) {
+		char first = !ctx->lwsac_head;
+
 		/*
 		 * We can't really control how much the caller will issue.
 		 *
@@ -69,20 +82,26 @@ a_write(struct archive *a, void *user, const void *p, size_t len)
 		 * LAC buffer
 		 */
 
-		char *chunk = lwsac_use(&ctx->lwsac_head, len - use, 0);
+		char *chunk = lwsac_use(&ctx->lwsac_head, 4 + (len - use), 0);
 
 		if (!chunk)
 			return -1;
 
-		memcpy(chunk, (const char *)p + use, len - use);
+		lws_ser_wu32be((uint8_t *)chunk, len - use);
+		memcpy(chunk + 4, (const char *)p + use, len - use);
 
-		if (!ctx->lac) {
+		if (first) { /* ie, start of lac chain */
 			ctx->lac = ctx->lwsac_head;
-			ctx->lacpos = lwsac_sizeof();
+			/*
+			 * Offset to start of first data in first chunk
+			 * (different to offset in subsequent chunks)
+			 */
+			ctx->lacpos = lws_ptr_diff(chunk, ctx->lwsac_head) + 4;
+			ctx->lac_chunck_end = ctx->lacpos + (len - use);
 		}
 
-		lwsl_notice("%s: stashed in lac: %d, lacpos: %d\n", __func__,
-			    (int)(len -use), (int)ctx->lacpos);
+		lwsl_debug("%s: stashed in lac: %zu, lacpos: %d\n", __func__,
+			    len - use, (int)ctx->lacpos);
 	}
 
 	/* claim that we used everything, even if some went in a LAC */
@@ -339,7 +358,7 @@ job_snapshot(struct jg2_ctx *ctx)
 
 		while (ctx->lac && ctx->p != ctx->end) {
 			avail = lws_ptr_diff(ctx->end, ctx->p);
-			use = nc = lwsac_get_tail_pos(ctx->lac) -  ctx->lacpos;
+			use = nc = ctx->lac_chunck_end - ctx->lacpos;
 
 			if (use > avail)
 				use = avail;
@@ -347,23 +366,27 @@ job_snapshot(struct jg2_ctx *ctx)
 			// lwsl_notice("%s: replay from lac use %d\n",
 			//		__func__, (int)use);
 
-			memcpy(ctx->p, ((char *)ctx->lac) + ctx->lacpos,
-			       use);
+			memcpy(ctx->p, ((char *)ctx->lac) + ctx->lacpos, use);
 
 			ctx->p += use;
 			ctx->lacpos += use;
 
-			if (ctx->lacpos == lwsac_get_tail_pos(ctx->lac)) {
+			if (ctx->lacpos == ctx->lac_chunck_end) {
 				/* if any, move to next chunk... */
-				ctx->lacpos = lwsac_sizeof();
+				ctx->lacpos = lwsac_sizeof(0) + 4;
 				ctx->lac = lwsac_get_next(ctx->lac);
+				if (ctx->lac)
+					ctx->lac_chunck_end = ctx->lacpos +
+						lws_ser_ru32be((uint8_t *)ctx->lac +
+							ctx->lacpos - 4);
 
 				/* if nothing left, free the LAC chain */
 				if (!ctx->lac) {
-					lwsl_notice("the lac chain is emptied\n");
+					lwsl_debug("the lac chain is emptied\n");
 					lwsac_free(&ctx->lwsac_head);
 				} else
-					lwsl_notice("moved to next lac\n");
+					lwsl_debug("moved to next lac, lac payload %ld\n",
+						ctx->lac_chunck_end - ctx->lacpos);
 			}
 		}
 

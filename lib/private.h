@@ -380,6 +380,7 @@ struct jg2_ctx {
 	/* for snapshot state */
 	struct archive *a;
 	size_t lacpos;
+	size_t lac_chunck_end;
 #endif
 
 	struct tree_iter_level stack[16];

@@ -216,7 +216,7 @@ job_commit_start(struct jg2_ctx *ctx)
 	ctx->lac = ctx->lwsac_head;
 	ctx->pos = 0;
 	ctx->size = 0;
-	ctx->ofs = 0;
+	ctx->ofs = lwsac_sizeof(1);
 
 	if (!ctx->raw_patch && !ctx->body)
 		CTX_BUF_APPEND("},\n \"diff\": \"");
@@ -313,9 +313,13 @@ job_commit(struct jg2_ctx *ctx)
 			CTX_BUF_APPEND("\n\n");
 	}
 
+	/*
+	 * We're going to walk the lac
+	 */
+
 	while (!ctx->body && ctx->lac && JG2_HAS_SPACE(ctx, 512)) {
 		size_t inlim_totlen = 84; /* control chars may bloat to 6x */
-		char *p = ((char *)ctx->lac) + lwsac_sizeof() + ctx->ofs;
+		char *p = ((char *)ctx->lac) + ctx->ofs;
 
 		if (!ctx->size) {
 			ctx->size = (unsigned char)*p++;
@@ -351,11 +355,10 @@ job_commit(struct jg2_ctx *ctx)
 			ctx->pos = 0;
 		}
 
-		if (ctx->ofs + lwsac_sizeof() >=
-		    lwsac_get_tail_pos(ctx->lac)) {
+		if (ctx->ofs >= lwsac_get_tail_pos(ctx->lac)) {
 			ctx->lac = lwsac_get_next(ctx->lac);
 			ctx->pos = 0;
-			ctx->ofs = 0;
+			ctx->ofs = lwsac_sizeof(0);
 			if (!ctx->lac)
 				goto ended;
 		}
