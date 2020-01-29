@@ -1,12 +1,17 @@
 [![travis](https://travis-ci.org/warmcat/gitohashi.svg?branch=master)](https://travis-ci.org/warmcat/gitohashi) [![coverity](https://scan.coverity.com/projects/16562/badge.svg?flat=1)](https://scan.coverity.com/projects/gitohashi) [![Codacy Badge](https://api.codacy.com/project/badge/Grade/b16f6d786a4846648a10c0265f2a2887)](https://www.codacy.com/app/lws-team/gitohashi?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=warmcat/gitohashi&amp;utm_campaign=Badge_Grade)
 
-gitohashi
----------
+gitohashi Gitweb daemon
+-----------------------
 
 Lightweight C Daemon that provides HTTP network transport and HTML presentation
-via a JSON representation of bare git repositories discovered via gitolite.
-Supports http/1, http/2 and unix socket (proxiable by, eg, apache & lighttpd)
-serving, avatar proxy caching and many other features.
+via a JSON representation of bare git repositories discovered via gitolite and
+accessed via libgit2.
+
+Supports http/1, http/2 and unix socket (proxiable by, eg, apache, lighttpd or
+libwebsocket's own lwsws) serving, avatar proxy caching and many other features.
+
+You can find real deployments at, eg, https://libwebsockets.org/git and
+https://warmcat.com/git .
 
 ![gitohashi-overview](./doc/doc-assets/gitohashi-overview.svg)
 
@@ -23,13 +28,13 @@ serving, avatar proxy caching and many other features.
    serve locally on per-vhost unix socket for integration with existing Apache /
    lighttpd etc server + mod_proxy
    
- - Only configuration per-vhost needed, the repo configuration is controlled
-   from gitolite config.
+ - Only needs configuration per-vhost in JSON, the repo configuration and
+   access control is taken from gitolite config.
 
  - Clientside JS, CSS and HTML are provided, along with Markdown parsing
-   and syntax highlighting JS to present the JSON + HTML from libjsongit2 in
-   a modern and responsive way.  SVG icons provided.  Customizing the css and
-   HTML template encouraged.
+   and syntax highlighting JS to present the JSON + HTML in a modern and
+   responsive way.  SVG icons provided.  Customizing the css and HTML
+   template encouraged.
 
  - Transparent caching at JSON block level, keyed using global repository ref
    state... cache invalidated when any ref updated.  ETAG browser cache
@@ -39,7 +44,7 @@ serving, avatar proxy caching and many other features.
  - Multiple vhosts natively supported; each can have their own template html /
    css and gitolite ACL "user" name for automatic repo permissions
 
- - Safe gravatar proxy cache, no referrer leaks
+ - Safe gravatar proxy cache, served locally, no referrer leaks
 
  - Very modest on memory, Valgrind-clean, Coverity-clean, works great on a
    Raspberry Pi 3
@@ -51,7 +56,7 @@ serving, avatar proxy caching and many other features.
  - Strict Content-Security-Policy out of the box, default-deny, 'self' and
    whitelisted img sources only (travis status etc).  
 
- - Dynamically linked - binds to distro system libs
+ - Dynamically linked - binds to distro system libs to stay up to date
 
 # Getting Started
 
@@ -73,6 +78,22 @@ You can get started by copying ./etc-gitohashi to /etc/gitohashi
 This contains JSON configuration files for two example gitohashi vhosts, one
 directly serving on :443 over https and the other serving on a unix domain
 socket for integration with another server.
+
+You'll need to amend, eg, the path to the gitolite repository base dir.
+
+If you are setting that up too, don't forget to create a bare test repo **and
+push content to it so gitohashi has something to display**.
+
+You'll need to ensure the gitohashi daemon runs with permissions that allow it
+at least read access to the directories and files in the gitolite repository.
+
+For example if the repository is owned by a user 'git', you can choose to run
+gitohashi under the same user.  If that makes problems due to, eg, selinux,
+another more complex way is run gitohashi as apache, and set the repositor
+base dir and underneath to be git:apache and set the "sticky bit" so the
+group is inherited.  This also requires `git config` to be set up to have
+`sharedRepository = group`, gitolite config is able to force this in the
+bare repo config it manages using `config core.sharedRepository = group`
 
 ### Startup
 
@@ -137,7 +158,7 @@ gitohashi installs its `./assets` directory into
 asset|function
 ---|---
 inconsolata.ttf|Web font for nice monospaced content
-jg2.js|The clientside part of libjsongit2 that turns the JSON into HTML
+jg2.js|The clientside part that turns the JSON into HTML
 jg2.css|Helper CSS for formatting jg2.js output
 logo.css|CSS SVG Image included by the example template HTML
 gitohashi-custom.css|CSS overrides related to the custom HTML template (normally served from wherever the HTML template is served from)
@@ -160,10 +181,10 @@ path:
 
  - you must serve that dir somehow over HTTP so the client browser can get at
    the rest of the assets mentioned in the HTML.  (The HTML is provided
-   directly by libjsongit2 in sandwich mode, but the other assets are collected
+   directly by gitohashi in sandwich mode, but the other assets are collected
    by the client browser over HTTP).  The provided HTTP template
    assumes it's served from the same server at the virtual path
-   "/git/_gitohashi", but you can change that as needed.
+   `/git/_gitohashi`, but you can change that as needed.
 
 Caching policy in your HTTP server for the assets can be relaxed, since they
 will normally only change when gitohashi it updated.
@@ -171,11 +192,11 @@ will normally only change when gitohashi it updated.
 ### Integration with gitolite v3
 
 Gitohashi tries to require as little configuration as possible.  One big help
-with that is it can use libjsongit2's ability to parse gitolite ACLs from the
-same repo base directory.  That allows you to use gitolite config to control
-which repos gitohashi can access and set information about them.
+with that is it can use parse gitolite ACLs from the same repo base directory.
+That allows you to use gitolite config to control which repos gitohashi can
+access and set information about them.
 
-Full details: [README-gitolite.md](https://warmcat.com/git/libjsongit2/tree/doc/README-gitolite.md) 
+Full details: [README-gitolite.md](./doc/README-gitolite.md) 
 
 ## Caching in gitohashi
 
@@ -202,7 +223,7 @@ directly.
 
 For these reasons gitohashi includes a smart server-side avatar cache.
 
-It's not a generic proxy cache, libjsongit2 informs gitohashi when it generates
+It's not a generic proxy cache, gitohashi knows when it specifically generates
 JSON mentioning an identity, and the avatar cache fetches the related avatar if
 it's not already in the cache.  The avatar cache is exposed in a mount serving
 static files with a user-controllable cache policy (which you can set to days
@@ -215,13 +236,10 @@ the third-party avatar provider and so no privacy issues.
 
 ### Transparent JSON Cache
 
-libjsongit2 has a sophisticated transparent JSON cache described in detail in
-its README
-
-https://warmcat.com/git/libjsongit2
+Gitohashi has a sophisticated transparent JSON cache.
 
 Cache entries are invalidated when the related repo's refs
-change; libjsongit2 maintains a hash of all refs in a repo for this purpose.
+change; gitohashi maintains a hash of all refs in a repo for this purpose.
 
 It means that deprecated repos nobody pushes to will keep their caches
 unless the size limit is reached and the cache content is reaped according to
@@ -249,8 +267,6 @@ understands ETAGs and will reply with a HTTP response code indicating the
 cached object is unchanged, renewing the clientside cache copy without having
 to resend any content.
 
-Gitohashi understands etags, 
-
 ## Notes on developing with gitohashi
 
 1. You can run gitohashi from the commandline with sudo, but you must
@@ -267,6 +283,12 @@ $ sudo HOME=/tmp valgrind --leak-check=full --show-leak-kinds=all /usr/local/bin
 ```
 $ sudo HOME=/tmp valgrind gdb --ex r --args /usr/local/bin/gitohashi
 ```
+
+## Serving git protocol over https
+
+Gitohashi only does gitweb, which is unrelated to git's optional read-only
+https protocol access.  Git's own `git-http-backend` should be used as a
+CGI to serve git https protocol.
 
 ## XSS mitigation
 
@@ -320,12 +342,6 @@ characters critical to the attack variants into escaped forms first.
 See https://warmcat.com/git/gitohashi/tree/xss/xss.c
 
 ## Upstreams and licenses
-
-### libjsongit2
-
-LGPL2.1+SLE
-
-https://warmcat.com/git/libjsongit2
 
 ### libwebsockets
 
