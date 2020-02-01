@@ -1,0 +1,25 @@
+extraction:
+  cpp:
+    prepare:
+      packages:
+        - libssl-dev
+        - libgit2-dev
+    after_prepare:
+     - "git clone https://libwebsockets.org/repo/libwebsockets"
+     - "cd libwebsockets"
+     - "mkdir build"
+     - "cd build"
+     - "cmake .. -DLWS_FOR_GITOHASHI=1"
+     - "make -j4"
+     - "cd .."
+     - "export GNU_MAKE=make"
+     - "export GIT=true"
+    configure:
+      command:
+       - "cmake . -DGOH_LWS_INC_PATH=/opt/src/libwebsockets/build/include -DGOH_LWS_LIB_PATH=/opt/src/libwebsockets/build/lib/libwebsockets.so.15"
+
+    index:
+      build_command:
+       - $GNU_MAKE VERBOSE=1 -j2 -s
+
+

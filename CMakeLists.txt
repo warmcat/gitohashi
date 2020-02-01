@@ -143,7 +143,7 @@ set(HDR_PUBLIC "include/libjsongit2.h" "${PROJECT_BINARY_DIR}/jg2-config.h")
 set_target_properties(jsongit2 PROPERTIES PUBLIC_HEADER "${HDR_PUBLIC}")
 target_include_directories(jsongit2 PRIVATE "${PROJECT_BINARY_DIR}"
 					      "${PROJECT_SOURCE_DIR}/include")      
-target_link_libraries(jsongit2 ${ASAN_LIBS} ${JG2_DEPLIBS})
+target_link_libraries(jsongit2 ${ASAN_LIBS} ${GOH_LWS_LIB_PATH} ${JG2_DEPLIBS})
 
 set(CPACK_COMPONENT_LIBRARIES_DISPLAY_NAME "Libraries")
 set(CPACK_COMPONENT_DEV_DISPLAY_NAME "Development files")

@@ -50,7 +50,7 @@
           if (typeof numOrFormattingOrContext === "number") {
             num = numOrFormattingOrContext;
             formatting = formattingOrContext;
-            context = context;
+            // context = context;
           } else {
             num = null;
             formatting = numOrFormattingOrContext;
@@ -522,7 +522,7 @@ function line_range_highlight(do_burger)
 
 	l2 = parse_hashurl_end(h, l1);
 
-	var lh, etable, etr, de, n, hl, v;
+	var etr, de, n, hl, v;
 
 	e = document.getElementById('n' + l1);
 	if (!e)
@@ -546,8 +546,8 @@ function line_range_highlight(do_burger)
 	de.style.width = etr.offsetWidth + 'px';
 
 	/* the table is offset from the left, the highlight needs to follow it */
-	etable = find_parent_of_type(etr, "table");
-	//de.style.left = etable.offsetLeft + 'px';
+	// etable = find_parent_of_type(etr, "table");
+	// de.style.left = etable.offsetLeft + 'px';
 	de.style.height = ((l2 - l1 + 1) * e.offsetHeight) + 'px';
 
 	etr.insertBefore(de, etr.firstChild);
@@ -610,12 +610,12 @@ function copy_text(elem, l1, l2)
 }
 
 
-var branches = new(Array), tags = new(Array), relpre_no_mode, relpost,
-				vpath, reponame, rmode, rpath, qbranch, qid, qofs, qsearch;
+var branches = new(Array), tags = new(Array), relpre_no_mode,
+		vpath, reponame, rmode, rpath, qbranch, qid, qofs, qsearch;
 
 function makeurl(_reponame, _mode, _rpath, _qbranch, _qid, _qofs, _qs)
 {
-	var base = window.location.pathname, c = '?', b = vpath;
+	var c = '?', b = vpath;
 
 	if (_reponame && b[0] !== '/')
 		b += '/';
@@ -623,7 +623,7 @@ function makeurl(_reponame, _mode, _rpath, _qbranch, _qid, _qofs, _qs)
 		b += _reponame;
 	if (_mode)
 		b += '/' + _mode;
-	if (_rpath && _rpath != null)
+	if (_rpath && _rpath !== null)
 		b += '/' + _rpath;
 	
 	if (_qbranch) {
@@ -643,7 +643,7 @@ function makeurl(_reponame, _mode, _rpath, _qbranch, _qid, _qofs, _qs)
 	
 	if (_qs) {
 		b += c + 'q=' + _qs;
-		c = '&';
+		// c = '&';
 	}
 
 	return san(b);
@@ -653,7 +653,7 @@ function makeurl(_reponame, _mode, _rpath, _qbranch, _qid, _qofs, _qs)
  * An element in the popup menu was clicked, perform the appropriate action
  */
 function mi_click(e) {
-	var u, n, l1, l2, el;
+	var u, l1, l2, el;
 
 	e.stopPropagation();
 	e.preventDefault();
@@ -690,7 +690,7 @@ function mi_click(e) {
 /* We got a click on the (***) burger menu */
 
 function burger_click(e) {
-	var e1 = e, etable, d = new Date, s = "", n, is_blame,
+	var e1 = e, s = "", n, is_blame,
 	    ar = new Array("mi-c-line", "mi-c-link", "mi-c-blame", "mi-c-tree"),
 	    an = new Array(i18n("Copy Lines"), i18n("Copy Link"),
 	    		i18n("View Blame"), /* 2: shown in /tree/ */
@@ -756,8 +756,8 @@ function burger_click(e) {
  */
 
 function line_range_click(e) {
-	var t, elem, m, n = window.location.href.length -
-			    window.location.hash.length;
+	var t, elem, n = window.location.href.length -
+			 window.location.hash.length;
 
 	/* disable passthru to stop scrolling by browser #URL handler */
 	e.stopPropagation();
@@ -800,32 +800,6 @@ function line_range_click(e) {
 	window.history.replaceState(null, null, t);
 
 	line_range_highlight(0);
-}
-
-function get_appropriate_ws_url(extra_url)
-{
-	var pcol;
-	var u = document.URL;
-
-	/*
-	 * We open the websocket encrypted if this page came on an
-	 * https:// url itself, otherwise unencrypted
-	 */
-
-	if (u.substring(0, 5) === "https") {
-		pcol = "wss://";
-		u = u.substr(8);
-	} else {
-		pcol = "ws://";
-		if (u.substring(0, 4) === "http")
-			u = u.substr(7);
-	}
-
-	u = u.split('/');
-
-	/* + "/xxx" bit is for IE10 workaround */
-
-	return pcol + u[0] + "/" + extra_url;
 }
 
 var age_names = [  "s",  "m",    "h", " days", " weeks", " months", " years" ];
@@ -930,7 +904,7 @@ function identity_img(i, size)
 
 function identity(i, size, parts)
 {
-	var s = "", em;
+	var s = "";
 
 	if (!i || !i.email || !i.md5)
 		return "";
@@ -964,18 +938,9 @@ function identity(i, size, parts)
 	return s;
 }
 
-function new_ws(urlpath, protocol)
-{
-	if (typeof MozWebSocket != "undefined")
-		return new MozWebSocket(urlpath, protocol);
-
-	return new WebSocket(urlpath, protocol);
-}
-
-
 function aliases(oid)
 {
-	var irefs = "";
+	var irefs = "", m;
 
 	for (m = 0; m < oid.alias.length; m++) {
 		r = oid.alias[m];
@@ -1010,7 +975,7 @@ function aliases(oid)
 
 function arch_select_handler(e)
 {
-	var suff, b, newloc = vpath;
+	var newloc = vpath;
 
 	e.stopPropagation();
 	e.preventDefault();
@@ -1037,7 +1002,7 @@ function create_popup(t, h_px, v_px, clas, title, wid, an, ar, clicker)
 {
 	var pop, s = "", n;
 	
-	pop = document.createElement("DIV")
+	pop = document.createElement("DIV");
 
 	pop.className = clas;
 	pop.style.top = v_px + "px";
@@ -1071,7 +1036,7 @@ function create_popup(t, h_px, v_px, clas, title, wid, an, ar, clicker)
 		document.getElementById(ar[0]).focus();
 		for (n = 0; n < an.length; n++)
 			document.getElementById(ar[n]).addEventListener(
-											"click", clicker, false);
+						"click", clicker, false);
 	}
 	setTimeout(function() {
 		pop.style.opacity = "1";
@@ -1239,7 +1204,7 @@ function html_log(l, now, count, next)
 	}	
 	
 	for (n = 0; n < l.length && n < count; n++) {
-		var irefs = "", m, r, c;
+		var irefs = "";
 		
 		irefs = aliases(l[n].name);
 		
@@ -1282,7 +1247,7 @@ function html_commit(j) {
 				"<a href=\"" + makeurl(reponame, "patch", rpath,
 						qbranch, san(j.items[0].commit.oid.oid), qofs) + "\">" +
 						"<img class='rawpatch'> " +
-				i18n("Raw Patch") + "</a>"
+				i18n("Raw Patch") + "</a>" +
 				"</td></tr>";
 	
 	s += "<tr><td colspan=2>&nbsp;</td></tr>";
@@ -1478,7 +1443,7 @@ function html_repolist(j, now)
 
 function display_summary(j, now)
 {
-	var n, s = "<table>";
+	var s = "<table>";
 
     s += html_branches(now, 10)
 	     
@@ -1529,9 +1494,9 @@ var sd_ext_plain = function () {
   };
   
   return [ext1, ext2, ext3, ext4, ext5];
-}
+};
 
-var ws, j;
+var j;
 var last_mm, blametable, blamesel, blameotron;
 
 function blameotron_handler(e)
@@ -1562,7 +1527,7 @@ function blameotron_revert(e)
 
 function blame_mousemove(e)
 {
-	var d = new Date(), t = d.getTime(), y = 0, n, m;
+	var d = new Date(), t = d.getTime(), n, m;
 
 	/* check the mouse only at 20Hz */
 	
@@ -1583,10 +1548,10 @@ function blame_mousemove(e)
 	
 	var x;
 	
-	if (x < 80)
+//	if (x < 80)
 		x = 80;
-	else
-		x = e.clientX;
+//	else
+//		x = e.clientX;
 	
 	var elements = document.elementsFromPoint(x, e.clientY), i;
 	var hunks = j.items[1].blame.length;
@@ -1615,7 +1580,7 @@ function blame_mousemove(e)
 				
 				blamesel = elements[m].classList[n];
 				var a = document.getElementsByClassName(blamesel);
-				hunk = parseInt(blamesel.substr(6), 10);
+				var hunk = parseInt(blamesel.substr(6), 10);
 				for (i = 0; i < a.length; i++)
 					a[i].style.backgroundColor =
 						"rgba(" + (128 + (((hunk) * 64) / hunks)) +
@@ -1689,13 +1654,12 @@ function blame_mouseout(e)
 	
 	var x;
 	
-	if (x < 80)
+//	if (x < 80)
 		x = 80;
-	else
-		x = e.clientX;
+//	else
+//		x = e.clientX;
 	
 	var elements = document.elementsFromPoint(x, e.clientY), m, n;
-	var hunks = j.items[1].blame.length;
 	
 	for (m = 0; m < elements.length; m++)
 		for (n = 0; n < elements[m].classList.length; n++) {
@@ -1722,7 +1686,6 @@ function goh_fts_choose()
 {
 	var ac = document.getElementById("searchresults");
 	var inp = document.getElementById("gohsearch");
-	var jj, n, m, s = "", x, lic = 0, hl, re;
 
 //	sr.style.width = (parseInt(sr.parentNode.offsetWidth, 10) - 88) + "px";
 //	sr.style.opacity = "1";
@@ -1735,12 +1698,8 @@ function goh_fts_choose()
 
 function goh_ac_select(e)
 {
-	var t;
-	
 	if (e) {
-		
-		
-		 t = e.target;
+		 var t = e.target;
 		
 		// console.log(t);
 	
@@ -1785,7 +1744,7 @@ function goh_search_input()
 		xhr.setRequestHeader('cache-control', 'max-age=0');
 	}
 	xhr.onload = function(e) {
-		var jj, n, s = "", x, mi = 0, lic = 0;
+		var q, jj, n, s = "", mi = 0, lic = 0;
 		var inp = document.getElementById("gohsearch");
 		var ac = document.getElementById("searchresults");
 		
@@ -1919,7 +1878,7 @@ function qindexing_update()
 
 function search_results(j)
 {
-	var s = "", qi = document.getElementById("qindexing");
+	var jj, s = "", qi = document.getElementById("qindexing");
 	var now = new Date().getTime() / 1000;
 
 	switch(parseInt(j.indexed, 10)) {
@@ -1929,7 +1888,7 @@ function search_results(j)
 		s += "<tr><td class='searchfiles'><main role=\"main\"><table>";
 
 			if (j.items[0] && j.items[0].search && j.items[0].search[0]) {
-				lic = j.items[0].search.length;						
+				var n, lic = j.items[0].search.length;						
 				for (n = 0; n < lic; n++) {
 					var link = "";
 					
@@ -2266,11 +2225,11 @@ function display(j)
 					hljs.configure({
 						tabReplace: "        ",
 						languages: [ hh.className ]
-					})
+					});
 				else
 					hljs.configure({
 						tabReplace: "        "
-					})
+					});
 				
 				hljs.highlightBlock(hh);
 				
@@ -2307,7 +2266,7 @@ function display(j)
 				/* blame ... */
 
 				if (j.items[1] && j.items[1].blame) {
-					var l1, l2, etr, r, m, hunk, hunks, lofs, etable;
+					var l1, l2, etr, r, m, hunk, hunks, lofs;
 
 					blametable = find_parent_of_type(e, "table");
 					
@@ -2487,7 +2446,7 @@ function parse_json(j)
 		}
 	}
 
-	alang = j.alang;
+	var alang = j.alang;
 	
 	if (alang) {
 		var a = alang.split(","), n;
@@ -2539,7 +2498,8 @@ function parse_json(j)
 
 window.addEventListener("load", function() {
 	//console.log("load");
-
+        if (document.getElementById("noscript"))
+                document.getElementById("noscript").display = "none";
 	line_range_highlight(1);
 }, false);
 
@@ -2559,7 +2519,7 @@ document.addEventListener("DOMContentLoaded", function() {
 		var st = document.getElementById("gitohashi-stats");
 		
 		if (st) {
-			var now = new Date().getTime() / 1000;
+			var n, s, now = new Date().getTime() / 1000;
 			s = "<table><tr><td rowspan='2'><img class='stats'></td>" +
 				"<td colspan='" + j.items.length + "'>";
 
