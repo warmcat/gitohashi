@@ -1,7 +1,7 @@
 /*
  * libjg2 - private includes
  *
- * Copyright (C) 2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2018 - 2020 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -18,6 +18,9 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
  */
+
+#if !defined(__LIBJG2_PRIVATE_H__)
+#define __LIBJG2_PRIVATE_H__
 
 #define _GNU_SOURCE
 #include <pthread.h>
@@ -547,3 +550,5 @@ __jg2_cache_query_v(struct jg2_ctx *ctx, int flags, const char *suffix, int *_fd
 
 int
 cache_trim_thread_spawn(struct jg2_global *jg2_global);
+
+#endif

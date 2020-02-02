@@ -166,8 +166,6 @@ job_snapshot_start(struct jg2_ctx *ctx)
 		return -1;
 	}
 
-	p1++;
-
 	p = ctx->sr.e[JG2_PE_PATH];
 	l = strlen(p);
 	if (l < 8)

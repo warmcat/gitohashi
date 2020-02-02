@@ -1,7 +1,7 @@
 /*
  * libjsongit2 - wrapper for libgit2 with JSON IO
  *
- * Copyright (C) 2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2018 - 2020 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -384,16 +384,16 @@ signature_json(const git_signature *sig, struct jg2_ctx *ctx)
 void
 signature_text(const git_signature *sig, struct jg2_ctx *ctx)
 {
-	struct tm *tm;
+	struct tm tm, *tmr;
 	char dt[96];
 
-	tm = localtime((const time_t *)&sig->when.time);
+	tmr = localtime_r((const time_t *)&sig->when.time, &tm);
 
 	CTX_BUF_APPEND("Author: %s <%s>\n", sig->name, sig->email);
 
-	if (tm) {
+	if (tmr) {
 		/* like Date:   Mon Aug 13 16:49:58 2018 +0800 */
-		strftime(dt, sizeof(dt), "%a %h %d %H:%M:%S %Y %z", tm);
+		strftime(dt, sizeof(dt), "%a %h %d %H:%M:%S %Y %z", &tm);
 		CTX_BUF_APPEND("Date: %s\n", dt);
 	}
 }

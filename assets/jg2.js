@@ -623,7 +623,7 @@ function makeurl(_reponame, _mode, _rpath, _qbranch, _qid, _qofs, _qs)
 		b += _reponame;
 	if (_mode)
 		b += '/' + _mode;
-	if (_rpath && _rpath !== null)
+	if (_rpath)
 		b += '/' + _rpath;
 	
 	if (_qbranch) {
@@ -909,7 +909,7 @@ function identity(i, size, parts)
 	if (!i || !i.email || !i.md5)
 		return "";
 
-	if (!!parts)
+	if (parts !== 0)
 		s = "<span class='identity'>";
 	
 	s += "<a class='grav-mailto' href='mailto:" + san(i.email) + "'>" +
@@ -932,7 +932,7 @@ function identity(i, size, parts)
 		s += " <span>" + tz_date(i.git_time.time, i.git_time.offset) +
 		     "</span>";
 	
-	if (!!parts)
+	if (parts !== 0)
 		s += "</span>";
 	
 	return s;
@@ -943,7 +943,7 @@ function aliases(oid)
 	var irefs = "", m;
 
 	for (m = 0; m < oid.alias.length; m++) {
-		r = oid.alias[m];
+		var r = oid.alias[m];
 
 		if (r.substr(0, 11) === "refs/heads/")
 			irefs += " <span class='inline-branch'>" +
@@ -1083,6 +1083,8 @@ function archive_click(t)
 					 arch_select_handler);
 }
 
+var j;
+
 function clonecopy_click(t)
 {
 	copy_clipboard("git clone " + san(j.url), t.target);
@@ -1177,7 +1179,7 @@ function html_tags(now, count)
 	}
 	}
 	
-	if (n == count)
+	if (n === count)
 		s += "<tr><td colspan=5><a href=\"" +
 		makeurl(reponame, "tags", rpath, qbranch, null, null) +
 		"\">[...]</a></td></tr>";
@@ -1233,7 +1235,7 @@ function html_commit(j) {
 	var s = "";
 	
 	if (!j.items[0].commit)
-		return;
+		return "";
 	
 	s += "<div><table>";
 	s += "<tr><td>" + i18n("Author") + "</td><td>" +
@@ -1306,7 +1308,7 @@ function html_tree(j, now)
 
 	if (!blog_mode && j.items[0] && j.items[0].tree) {
 	
-		var s = "<div class='jg2-tree'><pre><table><tr>" +
+		s = "<div class='jg2-tree'><pre><table><tr>" +
 					"<td class='heading'>" + i18n("Mode") + "</td>" +
 					"<td class='headingr'>" + i18n("Size") + "</td>" +
 					"<td class='heading'>" + i18n("Name") + "</td>" +
@@ -1324,7 +1326,7 @@ function html_tree(j, now)
 				s += "<tr><td>" + filemode(parseInt(j.items[0].tree[n].mode, 10)) + "</td>" +
 			     "<td>&nbsp</td><td class='dl-dir'><img class='folder'>&nbsp;" +
 			     "<a class='noline' href='" +
-				 makeurl(reponame, mo, (rpath != null ? rpath + '/' : "") +
+				 makeurl(reponame, mo, (rpath !== null ? rpath + '/' : "") +
 						 san(t[n].name), qbranch, qid, qofs) +
 				 "'>" + san(t[n].name) + "</a></td></tr>";
 			else
@@ -1333,7 +1335,7 @@ function html_tree(j, now)
 					 "</td>" + "<td class='r'>" +
 					 parseInt(j.items[0].tree[n].size, 10) +
 					 "</td><td class='dl-file'><a class='noline' href='" +
-					 makeurl(reponame, mo, (rpath != null ? rpath + '/' : "") +
+					 makeurl(reponame, mo, (rpath !== null ? rpath + '/' : "") +
 							 san(j.items[0].tree[n].name), qbranch, qid, qofs) +
 					 "'>" + san(j.items[0].tree[n].name) + "</a></td></tr>";
 		}
@@ -1418,7 +1420,7 @@ function html_repolist(j, now)
 
 	if (j.items[0] && j.items[0].repolist) {
 	
-		var s = "<div class='jg2-repolist'><table><tr>"+
+		s = "<div class='jg2-repolist'><table><tr>"+
 					"<td class='heading'>" + i18n("Name") + "</td>" +
 					"<td class='heading'>" + i18n("Description") + "</td>" +
 					"<td class='heading'>" + i18n("Owner") + "</td>" +
@@ -1445,7 +1447,7 @@ function display_summary(j, now)
 {
 	var s = "<table>";
 
-    s += html_branches(now, 10)
+    s += html_branches(now, 10);
 	     
 	s += "<tr><td colspan=5>&nbsp;</td></tr>";
 
@@ -1496,7 +1498,6 @@ var sd_ext_plain = function () {
   return [ext1, ext2, ext3, ext4, ext5];
 };
 
-var j;
 var last_mm, blametable, blamesel, blameotron;
 
 function blameotron_handler(e)
@@ -1508,7 +1509,7 @@ function blame_normal(d)
 	if (!d)
 		return;
 	
-	var a = document.getElementsByClassName(d);
+	var m, a = document.getElementsByClassName(d);
 	var hunks = j.items[1].blame.length, hunk = parseInt(d.substr(6), 10);
 
 	for (m = 0; m < a.length; m++)
@@ -1527,7 +1528,7 @@ function blameotron_revert(e)
 
 function blame_mousemove(e)
 {
-	var d = new Date(), t = d.getTime(), n, m;
+	var d = new Date(), t = d.getTime(), n, m, x = 80;
 
 	/* check the mouse only at 20Hz */
 	
@@ -1545,11 +1546,10 @@ function blame_mousemove(e)
 	 * front, because the user may want to highlight text for cut-and-paste
 	 * or click the line number links.
 	 */
-	
-	var x;
+
 	
 //	if (x < 80)
-		x = 80;
+//		x = 80;
 //	else
 //		x = e.clientX;
 	
@@ -1569,7 +1569,7 @@ function blame_mousemove(e)
 		for (n = 0; n < elements[m].classList.length; n++) 
 			if (elements[m].classList[n].substr(0, 6) === "bhunk-") {
 				
-				if (blamesel == elements[m].classList[n])
+				if (blamesel === elements[m].classList[n])
 					return;
 				
 				blame_normal(blamesel);
@@ -1607,7 +1607,7 @@ function blame_mousemove(e)
 							"#n" + thehunk.ranges[parseInt(
 							 elements[m].getAttribute("r"), 10)].o;
 					
-					if (thehunk.orig_oid.oid != qid)
+					if (thehunk.orig_oid.oid !== qid)
 						dl = "<a class='blameotron-revert' dest=\"" + devolve +
 						"\"><img class=\"devolve\"></a>&nbsp;";
 
@@ -1639,7 +1639,7 @@ function blame_mousemove(e)
 									botr_width, [ ], [ ], blameotron_handler);
 				}
 				
-				var elems = document.getElementsByClassName("blameotron-revert"), n;
+				var elems = document.getElementsByClassName("blameotron-revert");
 				for (n = 0; n < elems.length; n++)
 					elems[n].addEventListener("click", blameotron_revert.bind(elems[n]));
 				
@@ -1742,7 +1742,7 @@ function goh_search_input()
 
 	xhr.onopen = function(e) {
 		xhr.setRequestHeader('cache-control', 'max-age=0');
-	}
+	};
 	xhr.onload = function(e) {
 		var q, jj, n, s = "", mi = 0, lic = 0;
 		var inp = document.getElementById("gohsearch");
@@ -1847,7 +1847,7 @@ function goh_search_input()
 			document.getElementById("bar2").style.width =
 				((150 * jj.index_done) / (jj.index_files + 1)) + "px";
 		}
-	}
+	};
 	
 	xhr.open("GET", makeurl(reponame, "ac", null, qbranch, null, null,
 			 document.getElementById("gohsearch").value));
@@ -1860,16 +1860,16 @@ function qindexing_update()
 
 	xhr.onopen = function(e) {
 		xhr.setRequestHeader('cache-control', 'max-age=0');
-	}
+	};
 	xhr.onload = function(e) {
 		var sp1 = xhr.responseText.split("class=\"hidden-tiger\">"),
-		    sp2 = sp1[1].split("</div>");
+		    sp2 = sp1[1].split("</div>"), jj;
 		
 		console.log(sp2[0]);
 		jj = JSON.parse(sp2[0]);
 		
 		search_results(jj);
-	}
+	};
 	
 	xhr.open("GET", makeurl(reponame, "search", null, qbranch, null, null,
 			 qsearch));
@@ -1878,7 +1878,7 @@ function qindexing_update()
 
 function search_results(j)
 {
-	var jj, s = "", qi = document.getElementById("qindexing");
+	var s = "", qi = document.getElementById("qindexing");
 	var now = new Date().getTime() / 1000;
 
 	switch(parseInt(j.indexed, 10)) {
@@ -1934,7 +1934,7 @@ function search_results(j)
 
 function display(j)
 {
-	var url = window.location.pathname, q, n,
+	var url = window.location.pathname, q, hh, sp,
 		s = "<table class='repobar'><tbody class='repobar'>",
 		now = new Date().getTime() / 1000;
 
@@ -2053,7 +2053,7 @@ function display(j)
 			s += aliases(do_aliases) + "&nbsp;";
 		
 		if (rpath) {
-			var e = rpath.split('/'), agg = "", mo = rmode;
+			var n, e = rpath.split('/'), agg = "", mo = rmode;
 			
 			if (mo !== "tree" && mo !== "blame")
 				mo = "tree";
@@ -2148,28 +2148,27 @@ function display(j)
 		//elems[n].addEventListener("error", img_err_retry);
 	
 	if (j.f & 2) {
-		var elems = document.getElementsByClassName("archive");
-		for (n = 0; n < elems.length; n++)
-			elems[n].addEventListener("click", archive_click);
+		var n1, elems = document.getElementsByClassName("archive");
+
+		for (n1 = 0; n1 < elems.length; n1++)
+			elems[n1].addEventListener("click", archive_click);
 		
 		elems = document.getElementsByClassName("tag");
-		for (n = 0; n < elems.length; n++)
-			elems[n].addEventListener("click", archive_click);
+		for (n1 = 0; n1 < elems.length; n1++)
+			elems[n1].addEventListener("click", archive_click);
 		
 		elems = document.getElementsByClassName("branch");
-		for (n = 0; n < elems.length; n++)
-			elems[n].addEventListener("click", archive_click);
+		for (n1 = 0; n1 < elems.length; n1++)
+			elems[n1].addEventListener("click", archive_click);
 		
 		elems = document.getElementsByClassName("patch");
-		for (n = 0; n < elems.length; n++)
-			elems[n].addEventListener("click", archive_click);
+		for (n1 = 0; n1 < elems.length; n1++)
+			elems[n1].addEventListener("click", archive_click);
 	}
 	
-	{
-		var hh = document.getElementById("clonecopy");
-		if (hh)
-			hh.addEventListener("click", clonecopy_click);
-	}
+	hh = document.getElementById("clonecopy");
+	if (hh)
+		hh.addEventListener("click", clonecopy_click);
 	
 	var name = rpath;
 	if ((name && name.substring(name.length - 3) === ".md") ||
@@ -2179,22 +2178,22 @@ function display(j)
 		
 		doc_dir = "";
 		if (name) {
-			n = name.lastIndexOf("/");
-			if (n > 0)
-				doc_dir = name.substr(0, n + 1);
+			var nn = name.lastIndexOf("/");
+			if (nn > 0)
+				doc_dir = name.substr(0, nn + 1);
 		}
 				
 		showdown.extension('sd_ext_plain', sd_ext_plain);
 		
-		var conv = new showdown.Converter({extensions: ['sd_ext_plain']}), n;
-    	var hh = document.getElementById("do-showdown");
+		var conv = new showdown.Converter({extensions: ['sd_ext_plain']});
+		hh = document.getElementById("do-showdown");
 		/* blog formatting? */
-		var hd = hh.textContent.substring(0, 1024), sp, bf = 0, hdl = 0,
+		var hd = hh.textContent.substring(0, 1024), bf = 0, hdl = 0,
 				hdhtml = "", hdhtmle = "";
 		
 		sp = hd.split('\n');
-		if (sp[0].substr(0, 1) == '%' && sp[1].substr(0, 1) == '%' &&
-			sp[2].substr(0, 1) == '%') {
+		if (sp[0].substr(0, 1) === '%' && sp[1].substr(0, 1) === '%' &&
+			sp[2].substr(0, 1) === '%') {
 			bf = 1;
 			hdl = sp[0].length + sp[1].length + sp[2].length + 3;
 			hdhtml = "<main role=\"main\"><span class=\"blogtitle\">" + san(sp[0].substring(1)) +
@@ -2215,7 +2214,7 @@ function display(j)
 	} else
 	
 		if (typeof hljs !== "undefined") {
-			var hh = document.getElementById("do-hljs");
+			hh = document.getElementById("do-hljs");
 			if (hh) {
 				
 				/* workaround to stop hljs overriding the code class
@@ -2236,39 +2235,39 @@ function display(j)
 			//	if (qsearch)
 				//	hh = goh_search_highlight(hh, qsearch);
 
-				var e = document.getElementById("jglinenumbers"),
-					count, n = 1, sp;
-				if (e) {
-					e.onclick = line_range_click;
+				var ee = document.getElementById("jglinenumbers"),
+					count, n2 = 1;
+				if (ee) {
+					ee.onclick = line_range_click;
 					
-//					e.style.pointerEvents = "none";
+//					ee.style.pointerEvents = "none";
 
 					sp = hh.textContent.split('\n');
 				count = sp.length;
 				if (sp[sp.length - 1].length === 0)
 					count--;
 
-				while (n <= count) {
+				while (n2 <= count) {
 					var lin = document.createElement("a");
-					lin.id = "n" + n;
-					lin.href = "#n" + n;
-					lin.textContent = (n++) + "\n";
-						e.appendChild(lin);
+					lin.id = "n" + n2;
+					lin.href = "#n" + n2;
+					lin.textContent = (n2++) + "\n";
+						ee.appendChild(lin);
 					}
 				}
 
 				var top = window.getComputedStyle(hh, null).
 						getPropertyValue("padding-top");
 
-				if (e)
-					e.style.paddingTop = top - 3;
+				if (ee)
+					ee.style.paddingTop = top - 3;
 				
 				/* blame ... */
 
 				if (j.items[1] && j.items[1].blame) {
 					var l1, l2, etr, r, m, hunk, hunks, lofs;
 
-					blametable = find_parent_of_type(e, "table");
+					blametable = find_parent_of_type(ee, "table");
 					
 					blametable.addEventListener("mousemove", blame_mousemove, false);
 					blametable.addEventListener("mouseout", blame_mouseout, false);
@@ -2279,29 +2278,30 @@ function display(j)
 						r = j.items[1].blame[hunk].ranges;
 						
 						if (r) {
-							for (n = 0; n < r.length; n++) {
+							var n3;
+							for (n3 = 0; n3 < r.length; n3++) {
 		
 								m = document.createElement("DIV");
 								
-								l1 = r[n].f;
-								l2 = l1 + r[n].l - 1;
+								l1 = r[n3].f;
+								l2 = l1 + r[n3].l - 1;
 								
-								e = document.getElementById('n' + l1);
+								ee = document.getElementById('n3' + l1);
 								
 								m.className = "blamed-lines";
-								m.style.bottom = e.style.bottom;
-								m.style.top = collect_offsetTop(e) + 'px';
+								m.style.bottom = ee.style.bottom;
+								m.style.top = collect_offsetTop(ee) + 'px';
 								
 								m.classList.add('bhunk-' + hunk);
-								m.setAttribute("r", n);
+								m.setAttribute("r", n3);
 			
 								/* we will tack the highlight div at the parent tr */
-								etr = e.parentNode;//find_parent_of_type(e, "table");
+								etr = ee.parentNode;//find_parent_of_type(ee, "table");
 	
 								lofs = (hunk * 72) / hunks;
 								m.style.width = (blametable.offsetWidth - lofs) + 'px';
 								m.style.left = lofs + 'px';
-								m.style.height = ((l2 - l1 + 1) * e.offsetHeight) + 'px';
+								m.style.height = ((l2 - l1 + 1) * ee.offsetHeight) + 'px';
 	
 								etr.insertBefore(m, etr.firstChild);
 								m.style.backgroundColor =
@@ -2449,7 +2449,7 @@ function parse_json(j)
 	var alang = j.alang;
 	
 	if (alang) {
-		var a = alang.split(","), n;
+		var a = alang.split(",");
 		
 		for (n = 0; n < a.length; n++) {
 			var b = a[n].split(";");
