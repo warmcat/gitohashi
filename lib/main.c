@@ -459,11 +459,10 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 
 	lwsl_err("%s: vhost->cachedir %p vhost->cachedir->refcount %d\n",
 			__func__, vhost->cachedir,
-			vhost->cachedir->refcount);
+			vhost->cachedir ? vhost->cachedir->refcount : 0);
 
-	if (vhost->cachedir && !vhost->cachedir->refcount) {
+	if (vhost->cachedir && !vhost->cachedir->refcount)
 		jg2_repodir_destroy(&jg2_global.cachedir_head, vhost->cachedir);
-	}
 
 	/* remove ourselves from the global vhost list */
 
