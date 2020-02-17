@@ -1,6 +1,6 @@
-/* gitws.js: javascript functions for gitws
+/* jg2.js: javascript functions for gitohashi
  *
- * Copyright (C) 2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2018 - 2020 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -522,10 +522,12 @@ function line_range_highlight(do_burger)
 
 	l2 = parse_hashurl_end(h, l1);
 
-	var etr, de, n, hl, v;
+	var etr, de, n, hl, v, f;
 
 	e = document.getElementById('n' + l1);
-	if (!e)
+	f = document.getElementById('n' + l2);
+
+	if (!e || !f)
 		return;
 
 	if (do_burger)
@@ -548,7 +550,7 @@ function line_range_highlight(do_burger)
 	/* the table is offset from the left, the highlight needs to follow it */
 	// etable = find_parent_of_type(etr, "table");
 	// de.style.left = etable.offsetLeft + 'px';
-	de.style.height = ((l2 - l1 + 1) * e.offsetHeight) + 'px';
+	de.style.height = (collect_offsetTop(f) - collect_offsetTop(e) + f.offsetHeight) + 'px';
 
 	etr.insertBefore(de, etr.firstChild);
 
@@ -2235,7 +2237,7 @@ function display(j)
 			//	if (qsearch)
 				//	hh = goh_search_highlight(hh, qsearch);
 
-				var ee = document.getElementById("jglinenumbers"),
+				var ee = document.getElementById("jglinenumbers"), ef,
 					count, n2 = 1;
 				if (ee) {
 					ee.onclick = line_range_click;
@@ -2286,30 +2288,33 @@ function display(j)
 								l1 = r[n3].f;
 								l2 = l1 + r[n3].l - 1;
 								
-								ee = document.getElementById('n3' + l1);
+								ee = document.getElementById('n' + l1);
+								ef = document.getElementById('n' + l2);
+								if (ee && ef) {
 								
-								m.className = "blamed-lines";
-								m.style.bottom = ee.style.bottom;
-								m.style.top = collect_offsetTop(ee) + 'px';
-								
-								m.classList.add('bhunk-' + hunk);
-								m.setAttribute("r", n3);
-			
-								/* we will tack the highlight div at the parent tr */
-								etr = ee.parentNode;//find_parent_of_type(ee, "table");
-	
-								lofs = (hunk * 72) / hunks;
-								m.style.width = (blametable.offsetWidth - lofs) + 'px';
-								m.style.left = lofs + 'px';
-								m.style.height = ((l2 - l1 + 1) * ee.offsetHeight) + 'px';
-	
-								etr.insertBefore(m, etr.firstChild);
-								m.style.backgroundColor =
-									"rgba(" + (128 + (((hunk) * 128) / hunks)) +
-									   ", " + (128 + (((hunk) * 128) / hunks)) +
-									   ", " + (128 + (((hunk) * 128) / hunks)) +
-									   ", 0.3)";
+									m.className = "blamed-lines";
+									m.style.bottom = ee.style.bottom;
+									m.style.top = collect_offsetTop(ee) + 'px';
+									
+									m.classList.add('bhunk-' + hunk);
+									m.setAttribute("r", n3);
+				
+									/* we will tack the highlight div at the parent tr */
+									etr = ee.parentNode;//find_parent_of_type(ee, "table");
 		
+									lofs = (hunk * 72) / hunks;
+									m.style.width = (blametable.offsetWidth - lofs) + 'px';
+									m.style.left = lofs + 'px';
+									m.style.height = (collect_offsetTop(ef) - collect_offsetTop(ee) + ef.offsetHeight) + 'px';
+		
+									etr.insertBefore(m, etr.firstChild);
+									m.style.backgroundColor =
+										"rgba(" + (128 + (((hunk) * 128) / hunks)) +
+										   ", " + (128 + (((hunk) * 128) / hunks)) +
+										   ", " + (128 + (((hunk) * 128) / hunks)) +
+										   ", 0.3)";
+								} else
+									console.log("No element n" + l1); 
 							}
 						}
 					}

@@ -226,6 +226,7 @@ job_tree_start(struct jg2_ctx *ctx)
 		ctx->body = git_blob_rawcontent(u.blob);
 		ctx->size = git_blob_rawsize(u.blob);
 		ctx->pos = 0;
+		ctx->appended_blob = 1;
 
 //		lwsl_notice("%s: blob\n", __func__);
 

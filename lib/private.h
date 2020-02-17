@@ -397,6 +397,8 @@ struct jg2_ctx {
 	size_t html_pos;
 	int html_state;
 
+	char last_from_cache[6];
+
 	unsigned int partway:1;
 	unsigned int started:1;
 	/**< 0= not started, or finished JSON, 1 = in progress */
@@ -409,7 +411,7 @@ struct jg2_ctx {
 	unsigned int did_inline:1; /**< did the inline for tree */
 	unsigned int did_bat:1; /**< did the blame after tree */
 	unsigned int did_sat:1; /**< did the search after tree */
-
+	unsigned int appended_blob:1;
 	unsigned int subsequent:1; /**< not the first entry in a job json list */
 
 	unsigned int waiting_replay_done:1;
@@ -420,6 +422,7 @@ struct jg2_ctx {
 	unsigned int blog_mode:1;
 	unsigned int bot:1;
 	unsigned int failed_in_start:1;
+	unsigned int sealed_items:1;
 
 	unsigned int indexing:1;
 	unsigned int index_open_ro:1;

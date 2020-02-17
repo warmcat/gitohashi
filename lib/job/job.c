@@ -94,6 +94,14 @@ job_spool_from_cache(struct jg2_ctx *ctx)
 		return -1;
 	}
 
+	if (n < (int)sizeof(ctx->last_from_cache)) {
+		size_t m, old = sizeof(ctx->last_from_cache) - (size_t)n;
+		for (m = 0; m < old; m++)
+			ctx->last_from_cache[m] = ctx->last_from_cache[old + m];
+		memcpy(ctx->last_from_cache + old, ctx->p, n);
+	} else
+		memcpy(ctx->last_from_cache, ctx->p + (size_t)n - sizeof(ctx->last_from_cache), sizeof(ctx->last_from_cache));
+
 	ctx->p += n;
 	ctx->existing_cache_pos += n;
 
@@ -103,6 +111,12 @@ job_spool_from_cache(struct jg2_ctx *ctx)
 		ctx->job = NULL;
 		close(ctx->fd_cache);
 		ctx->fd_cache = -1;
+
+		if (ctx->last_from_cache[4] == ']' && ctx->last_from_cache[5] == '}') {
+			ctx->p[-1] = ' ';
+			ctx->existing_cache_pos--;
+			ctx->last_from_cache[5] = ' ';
+		}
 
 		//if (ctx->meta_last_job)
 			ctx->meta = 1;
@@ -526,6 +540,7 @@ meta_header(struct jg2_ctx *ctx)
 
 	ctx->started = 1;
 	ctx->subsequent = 0;
+//	ctx->sealed_items = 0;
 
 	if (ctx->meta || ctx->destroying)
 		return;
@@ -629,15 +644,18 @@ void
 meta_trailer(struct jg2_ctx *ctx, const char *term)
 {
 	struct timeval t2;
-	int pc = 0, pc1 = 0, idx;
-	uint32_t files, done;
 	const char *mode = jg2_ctx_get_path(ctx, JG2_PE_MODE, NULL, 0);
+	int pc = 0, pc1 = 0, idx, bl, bnaic = mode && !strcmp(mode, "blame");// && ctx->last_from_cache[4] != ']' && ctx->last_from_cache[5] != '}';
+	int appendo = (ctx->no_rider || jg2_job_naked(ctx)) || !mode || strcmp(mode, "blame") || (ctx->last_from_cache[4] != ']' || ctx->last_from_cache[5] != '}');
+	int cfixup = ctx->last_from_cache[4] == ']' && ctx->last_from_cache[5] == ' ';
+	uint32_t files, done;
 
 	if (lws_ptr_diff(ctx->end, ctx->p) < JG2_RESERVE_SEAL)
 		lwsl_err("%s: JG2_RESERVE_SEAL %d but only %d left\n", __func__,
 			 JG2_RESERVE_SEAL, lws_ptr_diff(ctx->end, ctx->p));
 
 	ctx->final = 1;
+	bl = mode && !strcmp(mode, "blame") && ctx->meta_last_job && !ctx->sealed_items;
 
 	gettimeofday(&t2, NULL);
 
@@ -646,7 +664,7 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 	 * for tests like ab that care about it
 	 */
 
-	if (term)
+	if (term && !bl)
 		/* s section is 12 chars + numbers */
 		CTX_BUF_APPEND("%s,\"s\":{\"c\":%8lu,\"u\":%8u}", term,
 		       (unsigned long)ctx->tv_gen.tv_sec,
@@ -656,10 +674,10 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 
 	/* we also always seal it with } CR */
 
-	if (term)
+	if (appendo && term && !bl && !ctx->sealed_items && !cfixup)
 		CTX_BUF_APPEND("}\n");
 
-	if (!ctx->meta || ctx->destroying)
+	if ((!ctx->meta || ctx->destroying) && (!mode || strcmp(mode, "blame")))
 		return;
 
 	if (!ctx->meta_last_job) {
@@ -681,8 +699,9 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 		pc1 = (ctx->vhost->etag_hits * 100) / ctx->vhost->etag_tries;
 
 	if (!ctx->no_rider && !jg2_job_naked(ctx)) {
-		if (!mode || strcmp(mode, "blame")) {
-			CTX_BUF_APPEND("]");
+		if (bl || (!mode || strcmp(mode, "blame"))) {
+			if (appendo && !ctx->sealed_items && !cfixup)
+				CTX_BUF_APPEND("]");
 		CTX_BUF_APPEND(",\"g\":%8lu,\"chitpc\":%8u,\"ehitpc\":%8u",
 			       (unsigned long)(timeval_us(&t2) -
 			         timeval_us(&ctx->tv_gen)), pc, pc1);
@@ -691,13 +710,18 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 
 			idx = job_search_check_indexed(ctx, &files, &done);
 
-			CTX_BUF_APPEND(",\n \"indexed\":%d\n", idx);
+			CTX_BUF_APPEND(",\"indexed\":%d\n", idx);
 
 			if (idx == LWS_DISKCACHE_QUERY_ONGOING)
 				CTX_BUF_APPEND(", \"index_files\":%d,\n"
 					       "\"index_done\":%d\n", files,
 					       done);
 		}
+
+		if (bnaic && !cfixup)
+			CTX_BUF_APPEND("}]");
+
+		CTX_BUF_APPEND(",\n \"ab\": %d, \"si\": %d, \"db\":%d, \"di\":%d, \"sat\":%d, \"lfc\": \"%02x%02x\"", ctx->appended_blob, ctx->sealed_items, ctx->did_bat, ctx->did_inline, ctx->did_sat, ctx->last_from_cache[4],ctx->last_from_cache[5]);
 
 		CTX_BUF_APPEND("}\n\n");
 		}
@@ -893,12 +917,14 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 
 			ellipsis_purify(pure, ctx->status, sizeof(pure));
 
-			CTX_BUF_APPEND(" \"error\": \"%s\"}]}", pure);
+			CTX_BUF_APPEND(" \"error\": \"%s\"}", pure);
+			CTX_BUF_APPEND("]}");
 
 			/* hm... let's say we completed */
 			ctx->final = 1;
 			ctx->meta_last_job = 1;
 			ctx->partway = 0;
+			ctx->sealed_items = 1;
 		}
 		// lwsl_err("%s: job says %d\n", __func__, more);
 
@@ -949,7 +975,6 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 				jg2_ctx_set_job(ctx, JG2_JOB_TREE, vid, 0,
 						JG2_JOB_FLAG_CHAINED |
 						JG2_JOB_FLAG_FINAL);
-
 				ctx->meta = 1;
 				break;
 			}
