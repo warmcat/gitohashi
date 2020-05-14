@@ -311,7 +311,6 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 	struct pss_gitohashi *pss = (struct pss_gitohashi *)user;
 	struct lws_threadpool_create_args cargs;
 	struct lws_threadpool_task_args targs;
-	struct lws_threadpool_task *task;
 	struct task_data_gitohashi *priv;
 	struct jg2_vhost_config config;
 	const char *csize, *flags, *z;
@@ -522,7 +521,8 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 		if (pss) {
 			lwsl_info("%s: HTTP_DROP_PROTOCOL: %s %p\n", __func__,
 				   (const char *)in, wsi);
-			lws_threadpool_dequeue(wsi);
+			if (lws_threadpool_get_task_wsi(wsi))
+				lws_threadpool_dequeue_task(lws_threadpool_get_task_wsi(wsi));
 		}
 		return 0;
 
@@ -534,10 +534,9 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 		if (!pss)
 			break;
 
-		n = lws_threadpool_task_status_wsi(wsi, &task, &_user);
+		n = lws_threadpool_task_status(lws_threadpool_get_task_wsi(wsi), &_user);
 		lwsl_info("%s: LWS_CALLBACK_SERVER_WRITEABLE: %p: "
-			   "task %p, priv %p, status %d\n", __func__, wsi, task,
-			   _user, n);
+			   "priv %p, status %d\n", __func__, wsi, _user, n);
 		switch(n) {
 		case LWS_TP_STATUS_FINISHED:
 		case LWS_TP_STATUS_STOPPED:
@@ -569,7 +568,7 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 			n = http_reply(wsi, vhd, pss, priv);
 			if (!priv->ctx) {
 				/* unblock him and stop him as we are done */
-				lws_threadpool_task_sync(task, 1);
+				lws_threadpool_task_sync(lws_threadpool_get_task_wsi(wsi), 1);
 
 				return n;
 			}
@@ -599,13 +598,13 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 			priv->used = 0;
 
 			if (priv->frametype == LWS_WRITE_HTTP_FINAL) {
-				lws_threadpool_task_sync(task, !priv->outlive);
+				lws_threadpool_task_sync(lws_threadpool_get_task_wsi(wsi), !priv->outlive);
 				goto transaction_completed;
 			}
 		}
 
 sync_end:
-		lws_threadpool_task_sync(task, 0);
+		lws_threadpool_task_sync(lws_threadpool_get_task_wsi(wsi), 0);
 
 		return 0;
 
