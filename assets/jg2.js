@@ -1310,7 +1310,7 @@ function html_tree(j, now)
 
 	if (!blog_mode && j.items[0] && j.items[0].tree) {
 	
-		s = "<div class='jg2-tree'><pre><table><tr>" +
+		s = "<div id=\"sai_sticky\"></div><div class='jg2-tree'><pre><table><tr>" +
 					"<td class='heading'>" + i18n("Mode") + "</td>" +
 					"<td class='headingr'>" + i18n("Size") + "</td>" +
 					"<td class='heading'>" + i18n("Name") + "</td>" +
