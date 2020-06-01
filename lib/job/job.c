@@ -680,7 +680,7 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 	if ((!ctx->meta || ctx->destroying) && (!mode || strcmp(mode, "blame")))
 		return;
 
-	if (!ctx->meta_last_job) {
+	if (!ctx->meta_last_job && !jg2_job_naked(ctx)) {
 		CTX_BUF_APPEND(",");
 		return;
 	}
