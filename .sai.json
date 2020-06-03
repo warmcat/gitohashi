@@ -1,0 +1,19 @@
+{
+	"schema": "sai-1",
+
+	"platforms": {
+		"linux-fedora-32-x86_64": {
+			"build": "${prep} mkdir build destdir;cd build;export CCACHE_DISABLE=1;export SAI_CPACK=\"-G RPM\";cmake .. ${cmake} && make -j && make -j DESTDIR=../destdir install && ctest -j4 --output-on-failure ${cpack}"
+		}
+	},
+	"configurations": {
+		"default": {
+			"prep":		"rm -rf libwebsockets && git clone https://libwebsockets.org/repo/libwebsockets && cd libwebsockets && mkdir build && cd build && cmake .. -DLWS_FOR_GITOHASHI=1 && make -j && cd ../.. &&",
+			"cmake":	"-DGOH_LWS_INC_PATH=../libwebsockets/build/include -DGOH_LWS_LIB_PATH=../libwebsockets/build/lib/libwebsockets.so",
+			"platforms":	"linux-fedora-32-x86_64",
+			"cpack":	"&& cpack $SAI_CPACK",
+			"artifacts":	"build/*.rpm, build/*.deb, build/*.zip"
+		}
+	}
+}
+

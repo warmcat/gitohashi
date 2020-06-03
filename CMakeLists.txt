@@ -28,6 +28,16 @@ project (gitohashi C)
 option(GOH_LWS_PLUGINS "Also build lws protocol plugins" OFF)
 option(GOH_WITH_ASAN "Build with libasan" OFF)
 
+
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Gitohashi")
+set(CPACK_PACKAGE_VENDOR "Andy Green <andy@warmcat.com>")
+set(CPACK_PACKAGE_DESCRIPTION "Advanced gitweb based on libwebsockets")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_VERSION_MAJOR "0")
+set(CPACK_PACKAGE_VERSION_MINOR "2")
+set(CPACK_PACKAGE_VERSION_PATCH "99")
+
+
 set(GOH_DEPLIBS jsongit2)
 set(JG2_DEPLIBS pthread) 
 
@@ -60,6 +70,41 @@ if (JG2_ARCHIVE_INC_PATH AND JG2_ARCHIVE_LIB_PATH)
 	include_directories(BEFORE "${JG2_ARCHIVE_INC_PATH}")
 	set(JG2_HAVE_ARCHIVE_H "Y")
 endif()
+
+find_package(Git)
+if(GIT_EXECUTABLE)
+        execute_process(
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                COMMAND "${GIT_EXECUTABLE}" describe --tags --always
+                OUTPUT_VARIABLE GIT_HASH
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                )
+
+        set(LWS_BUILD_HASH ${GIT_HASH})
+
+        # append the build user and hostname
+        if (NOT LWS_REPRODUCIBLE)
+                execute_process(
+                        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                        COMMAND "whoami"
+                        OUTPUT_VARIABLE GIT_USER
+                        OUTPUT_STRIP_TRAILING_WHITESPACE
+                        )
+                execute_process(
+                        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                        COMMAND "hostname"
+                        OUTPUT_VARIABLE GIT_HOST
+                        OUTPUT_STRIP_TRAILING_WHITESPACE
+                        )
+                string(REGEX REPLACE "([^\\])[\\]([^\\])" "\\1\\\\\\\\\\2" GIT_USER ${GIT_USER})
+                set(LWS_BUILD_HASH ${GIT_USER}@${GIT_HOST}-${GIT_HASH})
+        endif()
+
+        message("Git commit hash: ${LWS_BUILD_HASH}")
+endif()
+
+set(CPACK_PACKAGE_VERSION_PATCH "${CPACK_PACKAGE_VERSION_PATCH_NUMBER}-${LWS_BUILD_HASH}")
+
 
 #
 # libwebsockets paths
@@ -251,3 +296,5 @@ if (GOH_LWS_PLUGINS)
 		COMPONENT plugins)
 
 endif()
+
+include(CPack)
