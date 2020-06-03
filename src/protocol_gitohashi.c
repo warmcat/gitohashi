@@ -50,7 +50,9 @@ struct pss_gitohashi {
 struct vhd_gitohashi {
 	const char *html, *vpath, *repo_base_dir, *acl_user, *avatar_url;
 	const struct lws_protocols *cache_protocol;
+	struct lws_context *context;
 	struct jg2_vhost *jg2_vhost;
+	lws_sorted_usec_list_t sul;
 	struct lws_threadpool *tp;
 	struct lws_vhost *vhost;
 };
@@ -298,6 +300,18 @@ int avatar(void *avatar_arg, const unsigned char *md5)
 	return 0;
 }
 
+static void
+dump_cb(lws_sorted_usec_list_t *sul)
+{
+	struct vhd_gitohashi *vhd = lws_container_of(sul, struct vhd_gitohashi, sul);
+	/*
+	 * in debug mode, dump the threadpool stat to the logs once
+	 * a second
+	 */
+	//lws_threadpool_dump(vhd->tp);
+	lws_sul_schedule(vhd->context, 0, &vhd->sul, dump_cb, 1 * LWS_US_PER_SEC);
+}
+
 static int
 callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 	       void *user, void *in, size_t len)
@@ -330,6 +344,7 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 						 lws_get_protocol(wsi));
 
 		vhd->vhost = lws_get_vhost(wsi);
+		vhd->context = lws_get_context(wsi);
 
 		if (lws_pvo_get_str(in, "html-file", &vhd->html) ||
 		    lws_pvo_get_str(in, "vpath", &vhd->vpath) ||
@@ -404,9 +419,7 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 			return -1;
 		}
 
-		lws_timed_callback_vh_protocol(lws_get_vhost(wsi),
-					       lws_get_protocol(wsi),
-					       LWS_CALLBACK_USER, 1);
+		lws_sul_schedule(vhd->context, 0, &vhd->sul, dump_cb, 1);
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY: /* per vhost */
@@ -606,18 +619,6 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 sync_end:
 		lws_threadpool_task_sync(lws_threadpool_get_task_wsi(wsi), 0);
 
-		return 0;
-
-	case LWS_CALLBACK_USER:
-
-		/*
-		 * in debug mode, dump the threadpool stat to the logs once
-		 * a second
-		 */
-		//lws_threadpool_dump(vhd->tp);
-		lws_timed_callback_vh_protocol(lws_get_vhost(wsi),
-					       lws_get_protocol(wsi),
-					       LWS_CALLBACK_USER, 1);
 		return 0;
 
 	default:
