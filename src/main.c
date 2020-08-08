@@ -73,6 +73,7 @@ context_creation(const char *config_dir)
 		goto init_failed;
 
 	info.pcontext = &context;
+	info.vhost_name = NULL;
 
 	context = lws_create_context(&info);
 	if (context == NULL) {
