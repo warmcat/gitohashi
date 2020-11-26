@@ -648,7 +648,7 @@ function makeurl(_reponame, _mode, _rpath, _qbranch, _qid, _qofs, _qs)
 		// c = '&';
 	}
 
-	return san(b);
+	return encodeURIComponent(b);
 }
 
 /*
@@ -1017,7 +1017,7 @@ function create_popup(t, h_px, v_px, clas, title, wid, an, ar, clicker)
 	
 	if (title)
 		s += "<div class='popalias'>" +
-			title + "</div>";
+			san(title) + "</div>";
 	
 	if (an.length) {
 
@@ -1606,8 +1606,8 @@ function blame_mousemove(e)
 					
 					devolve = makeurl(reponame, "blame", bp,
 							null, thehunk.orig_oid.oid, null) +
-							"#n" + thehunk.ranges[parseInt(
-							 elements[m].getAttribute("r"), 10)].o;
+							"#n" + san(thehunk.ranges[parseInt(
+							 elements[m].getAttribute("r"), 10)].o);
 					
 					if (thehunk.orig_oid.oid !== qid)
 						dl = "<a class='blameotron-revert' dest=\"" + devolve +
