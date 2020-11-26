@@ -109,6 +109,38 @@ bail:
 	return 1;
 }
 
+/*
+ * This encapsulates master -> main fallback
+ */
+
+int
+jg2_oid_lookup(git_repository *repo, git_oid *oid, const char *hex_oid)
+{
+	int error;
+
+	if (!hex_oid[0])
+		return 1;
+
+	if (hex_oid[0] == 'r') {
+		error = git_reference_name_to_id(oid, repo, hex_oid);
+		if (error < 0) {
+			if (!strcmp(hex_oid, "refs/heads/master")) {
+				error = git_reference_name_to_id(oid, repo,
+						"refs/heads/main");
+			}
+			if (error < 0) {
+				lwsl_err("%s: unable to lookup ref '%s': %d\n",
+					 __func__, hex_oid, error);
+				return -1;
+			}
+		}
+	} else
+		if (git_oid_fromstr(oid, hex_oid))
+			return -1;
+
+	return 0;
+}
+
 const char *
 jg2_ctx_get_path(const struct jg2_ctx *ctx, jg2_path_element type,
 		 char *buf, size_t buflen)

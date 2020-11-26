@@ -33,7 +33,7 @@
  */
 
 struct task_data_gitohashi {
-	char buf[LWS_PRE + 4000];
+	char buf[LWS_PRE + 4096];
 	char url[1024], alang[128], ua[256], inm[36];
 	int frametype;
 	struct jg2_ctx *ctx;

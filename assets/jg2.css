@@ -121,6 +121,12 @@ div.gitohashi-stats {
 	font-size: 70%;
 }
 
+div.sai_sticky {
+        padding: 0px;
+        display: inline-block;
+	vertical-align: middle;
+}
+
 div.gitohashi-stats td {
 	padding: 0px;
 }

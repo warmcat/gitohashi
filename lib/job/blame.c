@@ -85,6 +85,8 @@ bhi_date_sort(lws_list_ptr a, lws_list_ptr b)
 static int
 job_blame_start(struct jg2_ctx *ctx)
 {
+	int error;
+
 	if (!ctx->hex_oid[0]) {
 		lwsl_err("no oid\n");
 		return 1;
@@ -100,23 +102,10 @@ job_blame_start(struct jg2_ctx *ctx)
 	ctx->blame_opts.flags |= GIT_BLAME_USE_MAILMAP;
 #endif
 
-	if (ctx->hex_oid[0] == 'r') {
-		int e = git_reference_name_to_id(&ctx->blame_opts.newest_commit,
-						 ctx->jrepo->repo,
-						 ctx->hex_oid);
-		if (e < 0) {
-			lwsl_err("%s: unable to lookup ref '%s': %d\n",
-				 __func__, ctx->hex_oid, e);
-
-			return -1;
-		}
-	} else
-		if (git_oid_fromstr(&ctx->blame_opts.newest_commit,
-				    ctx->hex_oid)) {
-			lwsl_err("no oid from string\n");
-
-			return -1;
-		}
+	error = jg2_oid_lookup(ctx->jrepo->repo, &ctx->blame_opts.newest_commit,
+				ctx->hex_oid);
+	if (error)
+		return error;
 
 	ctx->blame_opts.min_line = 1;
 

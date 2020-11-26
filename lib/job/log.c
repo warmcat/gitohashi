@@ -30,20 +30,9 @@ job_log_start(struct jg2_ctx *ctx)
 	git_oid oid;
 	int error;
 
-	if (!ctx->hex_oid[0])
-		return 1;
-
-	if (ctx->hex_oid[0] == 'r') {
-		error = git_reference_name_to_id(&oid, ctx->jrepo->repo,
-						 ctx->hex_oid);
-		if (error < 0) {
-			lwsl_err("%s: unable to lookup ref '%s': %d\n",
-				 __func__, ctx->hex_oid, error);
-			return -1;
-		}
-	} else
-		if (git_oid_fromstr(&oid, ctx->hex_oid))
-			return -1;
+	error = jg2_oid_lookup(ctx->jrepo->repo, &oid, ctx->hex_oid);
+	if (error)
+		return error;
 
 	error = git_object_lookup(&u.obj, ctx->jrepo->repo, &oid, GIT_OBJ_ANY);
 	if (error < 0)

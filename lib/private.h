@@ -554,4 +554,7 @@ __jg2_cache_query_v(struct jg2_ctx *ctx, int flags, const char *suffix, int *_fd
 int
 cache_trim_thread_spawn(struct jg2_global *jg2_global);
 
+int
+jg2_oid_lookup(git_repository *repo, git_oid *oid, const char *hex_oid);
+
 #endif

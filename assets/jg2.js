@@ -2050,7 +2050,7 @@ function display(j)
 		
 		s += "</ul></div>&nbsp;";
 		
-		s += "<div class='rpathname'>";
+		s += "<div id=\"sai_sticky\" class=\"sai_sticky\"></div><div class='rpathname'>";
 		if (do_aliases)
 			s += aliases(do_aliases) + "&nbsp;";
 		

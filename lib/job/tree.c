@@ -136,21 +136,10 @@ job_tree_start(struct jg2_ctx *ctx)
 	ctx->pos = 0;
 	ctx->tei = NULL;
 
-	if (ctx->hex_oid[0] == 'r') {
-		e = git_reference_name_to_id(&oid, ctx->jrepo->repo,
-					     ctx->hex_oid);
-		if (e < 0) {
-			lwsl_err("%s: unable to lookup ref '%s': %d\n",
-				 __func__, ctx->hex_oid, e);
+	e = jg2_oid_lookup(ctx->jrepo->repo, &oid, ctx->hex_oid);
+	if (e)
+		return e;
 
-			return -1;
-		}
-	} else
-		if (git_oid_fromstr(&oid, ctx->hex_oid)) {
-			lwsl_err("no oid from string\n");
-
-			return -1;
-		}
 
 	e = git_object_lookup(&u.obj, ctx->jrepo->repo, &oid, GIT_OBJ_ANY);
 	if (e < 0) {
