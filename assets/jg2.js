@@ -648,7 +648,7 @@ function makeurl(_reponame, _mode, _rpath, _qbranch, _qid, _qofs, _qs)
 		// c = '&';
 	}
 
-	return encodeURIComponent(b);
+	return b;
 }
 
 /*

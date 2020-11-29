@@ -615,10 +615,16 @@ blob_from_commit(struct jg2_ctx *ctx)
 	if (branch[0] == 'r') {
 		e = git_reference_name_to_id(&oid, ctx->jrepo->repo, branch);
 		if (e < 0) {
-			lwsl_err("%s: unable to lookup ref '%s': %d\n",
-				 __func__, ctx->hex_oid, e);
+			if (!strcmp(branch, "refs/heads/master"))
+				e = git_reference_name_to_id(&oid, ctx->jrepo->repo, "refs/heads/main");
+			if (e < 0) {
+				lwsl_err("%s: unable to lookup ref '%s'('%s'): %d\n",
+						__func__, ctx->hex_oid, branch, e);
 
-			return -1;
+				return -1;
+			}
+
+			lwsl_debug("%s: fell back to main to get blob\n", __func__);
 		}
 	} else
 		if (git_oid_fromstr(&oid, ctx->hex_oid)) {
@@ -650,6 +656,8 @@ blob_from_commit(struct jg2_ctx *ctx)
 	}
 
 	git_commit_free(c);
+
+	// lwsl_notice("%s: PE_PATH %s\n", __func__, ctx->sr.e[JG2_PE_PATH]);
 
 	if (ctx->sr.e[JG2_PE_PATH]) {
 
