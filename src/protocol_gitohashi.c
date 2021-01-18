@@ -328,8 +328,10 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 	struct task_data_gitohashi *priv;
 	struct jg2_vhost_config config;
 	const char *csize, *flags, *z;
-	int n, uid, gid;
 	void *_user;
+	uid_t uid;
+	gid_t gid;
+	int n;
 
 	switch (reason) {
 
