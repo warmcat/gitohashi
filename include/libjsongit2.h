@@ -24,6 +24,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #if defined(__GNUC__)
 #define JG2_VISIBLE __attribute__((visibility("default")))
@@ -62,7 +63,7 @@ struct jg2_vhost_config {
 	uint64_t cache_size_limit; /**< goal for max cache size in bytes,
 				    *   0 means use default of 256MiB */
 
-	int cache_uid; /**< if you create the vhosts while still being root
+	uid_t cache_uid; /**< if you create the vhosts while still being root
 			 * and later change uid + gid, you can set the uid
 			 * of the cache directory permissions here, even if the
 			 * cache dir is somewhere privileged like /var/cache/...

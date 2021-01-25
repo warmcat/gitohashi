@@ -68,7 +68,7 @@ jg2_acl_check(struct jg2_ctx *ctx, const char *reponame, const char *auth)
 		if (!__jg2_gitolite3_acl_check(ctx, rei, vh->cfg.acl_user))
 			ret = 0;
 		else
-			if (auth && __jg2_gitolite3_acl_check(ctx, rei, auth))
+			if (auth && !__jg2_gitolite3_acl_check(ctx, rei, auth))
 				ret = 0;
 	}
 
