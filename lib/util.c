@@ -25,6 +25,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include <sys/time.h>
 
@@ -79,6 +80,8 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 		}
 
 	for (n = 0; n < 4; n++) {
+		char *pp;
+
 		p = strchr(p, !n ? '?' : '&');
 		if (!p)
 			return 0;
@@ -89,14 +92,43 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 		if (!p)
 			return 0;
 
-		if (p[-1] == 'h')
-			sr->e[JG2_PE_BRANCH] = p + 1;
-		if (p[-1] == 'd') /* id */
-			sr->e[JG2_PE_ID] = p + 1;
-		if (p[-1] == 's') /* ofs */
+		if (p[-1] == 'h') {
+			pp = strdup(p + 1);
+			sr->e[JG2_PE_BRANCH] = (const char *)pp;
+			while (*pp) {
+				if (*pp != '_' && *pp != '-' && !isalnum(*pp)) {
+					*pp = '\0';
+					break;
+				}
+				pp++;
+			}
+		}
+		if (p[-1] == 'd') {/* id hex hash string*/
+			pp = strdup(p + 1);
+			sr->e[JG2_PE_ID] = (const char *)pp;
+
+			while (*pp) {
+				if (*pp < '0' || (*pp > '9' && *pp < 'A') || (*pp > 'Z' && *pp < 'a') || *pp > 'z') {
+					*pp = '\0';
+					break;
+				}
+				pp++;
+			}
+		}
+		if (p[-1] == 's') { /* ofs */
 			sr->offset = atoi(p + 1);
-		if (p[-1] == 'q')
-			sr->e[JG2_PE_SEARCH] = p + 1;
+		}
+		if (p[-1] == 'q') {
+			pp =  strdup(p + 1);
+			sr->e[JG2_PE_SEARCH] = (const char *)pp;
+			while (*pp) {
+				if (*pp != '_' && *pp != '-' && !isalnum(*pp)) {
+					*pp = '\0';
+					break;
+				}
+				pp++;
+			}
+		}
 		p++;
 	}
 
@@ -167,11 +199,22 @@ jg2_ctx_get_path(const struct jg2_ctx *ctx, jg2_path_element type,
 void
 jg2_repopath_destroy(struct jg2_split_repopath *sr)
 {
-	if (!sr->e[JG2_PE_NAME])
-		return;
-
-	free((char *)sr->e[JG2_PE_NAME]);
-	sr->e[JG2_PE_NAME] = NULL;
+	if (sr->e[JG2_PE_BRANCH]) {
+		free((char *)sr->e[JG2_PE_BRANCH]);
+		sr->e[JG2_PE_BRANCH] = NULL;
+	}
+	if (sr->e[JG2_PE_ID]) {
+		free((char *)sr->e[JG2_PE_ID]);
+		sr->e[JG2_PE_ID] = NULL;
+	}
+	if (sr->e[JG2_PE_SEARCH]) {
+		free((char *)sr->e[JG2_PE_SEARCH]);
+		sr->e[JG2_PE_SEARCH] = NULL;
+	}
+	if (sr->e[JG2_PE_NAME]) {
+		free((char *)sr->e[JG2_PE_NAME]);
+		sr->e[JG2_PE_NAME] = NULL;
+	}
 }
 
 /* returns amount written to escaped.

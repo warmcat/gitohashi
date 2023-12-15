@@ -425,6 +425,10 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY: /* per vhost */
+		if (!vhd) {
+			lwsl_err("%s: NULL vhd\n", __func__);
+			break;;
+		}
 		jg2_vhost_destroy(vhd->jg2_vhost);
 		lws_threadpool_finish(vhd->tp);
 		lws_threadpool_destroy(vhd->tp);
@@ -512,6 +516,11 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 		 * that's all the info we need... queue the task to do the
 		 * actual business (priv is passed by targs.user)
 		 */
+
+		if (!vhd) {
+			lwsl_err("%s: NULL vhd\n", __func__);
+			return -1;
+		}
 
 		if (!lws_threadpool_enqueue(vhd->tp, &targs, "goh-%s",
 					    (const char *)in)) {

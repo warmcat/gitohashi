@@ -6,6 +6,8 @@ After=syslog.target
 ExecStart=/usr/local/bin/gitohashi
 ExecReload=/usr/bin/kill -HUP $MAINPID
 ExecStop=/usr/bin/killall gitohashi
+Restart=on-failure
+RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target

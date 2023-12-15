@@ -581,6 +581,7 @@ judge:
 			n = read(fd, buf, sizeof(buf) - 1);
 			if (n <= 0)
 				break;
+			fwrite(buf, 1, n, stderr);
 			m = 0;
 		}
 		if (buf[m] == '\n') {
@@ -599,9 +600,11 @@ judge:
 				if (!rei) {
 					lwsl_err("%s: unknown rei %s\n",
 							__func__, si);
-					close(fd);
+			//		close(fd);
 
-					return 1;
+			//		return 1;
+					pos = 0;
+					continue;
 				}
 
 				lwsl_notice("%s: auth %s valid for %s\n",

@@ -31,6 +31,8 @@
 #include <signal.h>
 #include <time.h>
 
+#include <git2/common.h>
+
 #define LWSWS_CONFIG_STRING_SIZE (32 * 1024)
 
 static int interrupted;
@@ -120,6 +122,8 @@ int main(int argc, const char **argv)
 
 	lwsl_user("Gitohashi - "
 		  "Copyright (C) 2018 Andy Green <andy@warmcat.com>\n");
+
+//	git_libgit2_opts(GIT_OPT_SET_OWNER_VALIDATION, 0);
 
 	context = context_creation("/etc/gitohashi");
 	if (!context) {

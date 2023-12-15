@@ -788,6 +788,15 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 		    lws_ptr_diff(ctx->end, ctx->p) < 1024)
 			break;
 
+		/*
+		CTX_BUF_APPEND("<meta name=\"Description\" content=\""
+			       "generated-by:gitohashi git web interface, "
+			       "repository: %s, mode: %s, path: %s, rev: %s\">",
+			       reponame ? reponame : "-", mode ? mode : "-",
+			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) ?
+			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) :
+				       "-", vid ? vid : "-");
+*/
 		CTX_BUF_APPEND("<meta name=\"Description\" content=\""
 			       "generated-by:gitohashi git web interface, "
 			       "repository: %s, mode: %s, path: %s, rev: %s\">",

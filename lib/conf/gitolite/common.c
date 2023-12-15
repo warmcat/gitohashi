@@ -24,6 +24,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 #define lp_to_rei(p, _n) lws_list_ptr_container(p, struct repo_entry_info, _n)
 
@@ -55,8 +56,10 @@ jg2_acl_check(struct jg2_ctx *ctx, const char *reponame, const char *auth)
 	struct repo_entry_info *rei;
 	int ret = 1;
 
-	if (!reponame || !reponame[0])
+	if (!reponame || !reponame[0]) {
+		lwsl_err("%s: NULL or empty reponame\n", __func__);
 		return 1; /* disallow */
+	}
 
 	if (auth && !strcmp(auth, "@all"))
 		return 0; /* allow everything */
@@ -70,7 +73,8 @@ jg2_acl_check(struct jg2_ctx *ctx, const char *reponame, const char *auth)
 		else
 			if (auth && !__jg2_gitolite3_acl_check(ctx, rei, auth))
 				ret = 0;
-	}
+	} else
+		lwsl_err("%s: no rei for %s\n", __func__, reponame);
 
 	pthread_mutex_unlock(&rd->lock); /* ------------------ repodir unlock */
 
@@ -100,7 +104,7 @@ __jg2_conf_gitolite_admin_head(struct jg2_ctx *ctx)
 
 	m = git_repository_open_ext(&repo, filepath, 0, NULL);
 	if (m < 0) {
-		lwsl_err("%s: can't open %s\n", __func__, filepath);
+		lwsl_err("%s: git_repository_open_ext can't open %s: %d:%d uid %d gid %d\n", __func__, filepath, m, errno, (int)getuid(), (int)getgid());
 		goto bail;
 	}
 

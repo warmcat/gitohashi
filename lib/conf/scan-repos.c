@@ -74,7 +74,7 @@ __jg2_conf_scan_repos(struct jg2_repodir *rd)
 		     "/tmp/_goh_rl_%s", rd->hexoid_gitolite_conf);
 	fd = open(filepath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
 	if (fd < 0) {
-		lwsl_err("%s: unable to create repo list\n", __func__);
+		lwsl_err("%s: unable to create repo list: %s\n", __func__, filepath);
 		ret = -1;
 		goto bail;
 	}
@@ -126,6 +126,9 @@ __jg2_conf_scan_repos(struct jg2_repodir *rd)
 		p = name = (char *)(rei + 1);
 		memcpy(name, de->d_name, m - 4);
 		name[m - 4] = '\0';
+
+		lwsl_err("%s: creating rei for %s\n", __func__, name);
+
 		p += m - 3;
 		rei->name_len = m - 3;
 		rei->acls_valid_head = NULL;
