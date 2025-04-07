@@ -297,17 +297,22 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
 		}
 
 		if (pid) {
+			int wpr;
 
 			/* parent */
 
 			if (fdsi != -1)
 				close(fdsi);
 			close(fd); /* parent doesn't want it */
-			waitpid(pid, &res, 0);
+			res = 0;
+			wpr = waitpid(pid, &res, 0);
 
 			/* child is done, so his copy of fd is also closed */
 
-			lwsl_notice("%s: query result %d\n", __func__, res);
+	//		if (WIFEXITED(res))
+	//			res = WEXITSTATUS(res);
+
+			lwsl_notice("%s: query result %d, %d\n", __func__, wpr, res);
 
 			n = write(jg2_global->gl3_pipe_result[1], &res,
 				  sizeof(res));
@@ -460,7 +465,7 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
 	} else
 		lwsl_notice("%s: can't open %s\n", __func__, temp);
 
-	lwsl_notice("%s: query result %d\n", __func__, res);
+	lwsl_notice("%s: query result B %d\n", __func__, res);
 
 bail:
 	pthread_mutex_unlock(&jg2_global->lock_query); /* global query unlock */
