@@ -1017,7 +1017,7 @@ function create_popup(t, h_px, v_px, clas, title, wid, an, ar, clicker)
 	
 	if (title)
 		s += "<div class='popalias'>" +
-			san(title) + "</div>";
+			title + "</div>";
 	
 	if (an.length) {
 
@@ -1030,7 +1030,7 @@ function create_popup(t, h_px, v_px, clas, title, wid, an, ar, clicker)
 		s += "</ul></div>";
 		
 	}
-		    
+
 	pop.innerHTML = s;
 	t.parentNode.appendChild(pop, null);
 
@@ -1607,7 +1607,7 @@ function blame_mousemove(e)
 					devolve = makeurl(reponame, "blame", bp,
 							null, thehunk.orig_oid.oid, null) +
 							"#n" + san(thehunk.ranges[parseInt(
-							 elements[m].getAttribute("r"), 10)].o);
+							 elements[m].getAttribute("r"), 10)].o.toString());
 					
 					if (thehunk.orig_oid.oid !== qid)
 						dl = "<a class='blameotron-revert' dest=\"" + devolve +
