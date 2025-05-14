@@ -96,7 +96,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 			pp = strdup(p + 1);
 			sr->e[JG2_PE_BRANCH] = (const char *)pp;
 			while (*pp) {
-				if (*pp != '_' && *pp != '-' && !isalnum(*pp)) {
+				if (/* *pp != '_' && *pp != '-' && !isalnum(*pp) */ !*pp || *pp == '&') {
 					*pp = '\0';
 					break;
 				}
