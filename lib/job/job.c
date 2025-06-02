@@ -78,10 +78,15 @@ job_spool_from_cache(struct jg2_ctx *ctx)
 
 	if (ctx->fd_cache == -1)
 		return -1;
+	// lwsl_err("%s: entry\n", __func__);
+
 
 	left = lws_ptr_diff(ctx->end, ctx->p);
-	if (left <= JG2_RESERVE_SEAL)
+	if (left <= JG2_RESERVE_SEAL) {
+		lwsl_err("%s: left too small\n", __func__);
+
 		return 0;
+	}
 	left -= JG2_RESERVE_SEAL;
 
 	n = read(ctx->fd_cache, ctx->p, left);

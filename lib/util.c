@@ -102,6 +102,8 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 				}
 				pp++;
 			}
+			// lwsl_err("%s: branch seen as %s\n", __func__, sr->e[JG2_PE_BRANCH]);
+
 		}
 		if (p[-1] == 'd') {/* id hex hash string*/
 			pp = strdup(p + 1);
@@ -583,16 +585,25 @@ generic_object_summary(const git_oid *oid, struct jg2_ctx *ctx)
 	git_otype type;
 	int e;
 
-	if (!oid)
+	if (!oid) {
+		CTX_BUF_APPEND("{}");
+
 		return 0;
+	}
 
 	e = git_object_lookup(&u.obj, ctx->jrepo->repo, oid, GIT_OBJ_ANY);
-	if (e < 0)
+	if (e < 0) {
+		CTX_BUF_APPEND("{}");
+
 		return 0;
+	}
 
 	type = git_object_type(u.obj);
-	if (type < GIT_OBJ_COMMIT || type > GIT_OBJ_TAG)
+	if (type < GIT_OBJ_COMMIT || type > GIT_OBJ_TAG) {
+		CTX_BUF_APPEND("{}");
+
 		return 0;
+	}
 
 	CTX_BUF_APPEND("{ ");
 

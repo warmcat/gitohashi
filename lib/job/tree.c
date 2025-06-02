@@ -353,8 +353,10 @@ job_tree(struct jg2_ctx *ctx)
 		return 0;
 	}
 
+	// lwsl_err("%s: entry\n", __func__);
+
 	if (!ctx->partway && job_tree_start(ctx)) {
-		lwsl_info("%s: start failed (%s)\n", __func__, ctx->hex_oid);
+		lwsl_err("%s: start failed (%s)\n", __func__, ctx->hex_oid);
 		return -1;
 	}
 
@@ -362,6 +364,8 @@ job_tree(struct jg2_ctx *ctx)
 		/* we're sending a blob */
 
 		size_t inlim_totlen = ctx->size - ctx->pos;
+
+		// lwsl_err("%s: sending blob\n", __func__);
 
 		m = lws_ptr_diff(ctx->end, ctx->p) - 1;
 		if (m < JG2_RESERVE_SEAL + 24)
@@ -379,7 +383,12 @@ job_tree(struct jg2_ctx *ctx)
 					  m, &inlim_totlen);
 		ctx->pos += inlim_totlen;
 
+		// lwsl_notice("%s: %.*s\n", __func__, (int)m,  (char *)ctx->body + ctx->pos);
+
 		if (ctx->pos == ctx->size) {
+			// lwsl_err("%s: blob reached size\n", __func__);
+
+
 			meta_trailer(ctx, "\"");
 			job_tree_destroy(ctx);
 		}
@@ -391,8 +400,11 @@ job_tree(struct jg2_ctx *ctx)
 		const char *tei_name = (const char *)(ctx->tei + 1);
 		size_t n;
 
-		if (!JG2_HAS_SPACE(ctx, 250 + ctx->tei->namelen))
+		if (!JG2_HAS_SPACE(ctx, 250 + ctx->tei->namelen)) {
+			// lwsl_err("%s: JG2_HAS_SPACE failed\n", __func__);
+
 			break;
+		}
 
 		CTX_BUF_APPEND("%c\n{ \"name\": \"%s\","
 			       "\"mode\": \"%u\", \"size\":%llu}",
