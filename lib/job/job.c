@@ -726,9 +726,9 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 		if (bnaic && !cfixup)
 			CTX_BUF_APPEND("}]");
 
-		CTX_BUF_APPEND(",\n \"ab\": %d, \"si\": %d, \"db\":%d, \"di\":%d, \"sat\":%d, \"lfc\": \"%02x%02x\"", ctx->appended_blob, ctx->sealed_items, ctx->did_bat, ctx->did_inline, ctx->did_sat, ctx->last_from_cache[4],ctx->last_from_cache[5]);
+		CTX_BUF_APPEND(",\n \"ab\": %d, \"si\": %d, \"db\":%d, \"di\":%d, \"sat\":%d, \"lfc\": \"%02x%02x\"}", ctx->appended_blob, ctx->sealed_items, ctx->did_bat, ctx->did_inline, ctx->did_sat, ctx->last_from_cache[4],ctx->last_from_cache[5]);
 
-		CTX_BUF_APPEND("}\n\n");
+//		CTX_BUF_APPEND("}\n\n");
 		}
 	}
 
@@ -907,7 +907,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 
 	case HTML_STATE_JSON:
 
-		// lwsl_err("%s: STATE_JSON\n", __func__);
+		 lwsl_err("%s: STATE_JSON\n", __func__);
 
 		if (!jg2_ctx_get_job(ctx))
 			break;

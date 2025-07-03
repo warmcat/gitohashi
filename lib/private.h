@@ -88,7 +88,7 @@ struct jg2_vhost;
  *
  * The jobs act to reserve this amount of buffer.
  */
-#define JG2_RESERVE_SEAL 100
+#define JG2_RESERVE_SEAL 200
 #define JG2_HAS_SPACE(ctx, num) (lws_ptr_diff(ctx->end, ctx->p) > \
 				 JG2_RESERVE_SEAL + num)
 
