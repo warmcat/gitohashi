@@ -561,6 +561,9 @@ meta_header(struct jg2_ctx *ctx)
 #endif
 	f |= ctx->blog_mode << 2;
 
+	if (ctx->flags & JG2_CTX_FLAG_BLAME_OVERLOADED)
+		f |= 8;
+
 	/*
 	 * We always issue this first section fresh.  That allows it to
 	 * contain things like the accept-languages header the browser sent,

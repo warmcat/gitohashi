@@ -1954,6 +1954,9 @@ function display(j)
 	if (!blog_mode && reponame) {
 		var do_aliases = null, s1 = "", s2 = "", s3 = "", s4 = "";
 		
+		if (j.f & 8)
+			s += "<div class='warning-banner' style='background-color: #f8d7da; color: #721c24; padding: 10px; border: 1px solid #f5c6cb; margin-bottom: 15px;'>System overloaded: Blame disabled, showing tree instead.</div>";
+
 		s += "<tr class='repobar'><td class='repobar'><div class='repobar'>" +
 		     "<table><tr><td><span class='reponame'>" +
 			 "<a href='" + makeurl() + "'>" +

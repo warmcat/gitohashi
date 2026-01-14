@@ -40,6 +40,7 @@ struct task_data_gitohashi {
 	size_t used;
 	char final;
 	char outlive;
+	char blame_overloaded;
 };
 
 struct pss_gitohashi {
@@ -158,6 +159,9 @@ http_reply(struct lws *wsi, struct vhd_gitohashi *vhd,
 	if (priv->ua[0] &&
 	    (strstr(priv->ua, "bot") || strstr(priv->ua, "Bot")))
 		args.flags |= JG2_CTX_FLAG_BOT;
+
+	if (priv->blame_overloaded)
+		args.flags |= JG2_CTX_FLAG_BLAME_OVERLOADED;
 
 	p = start;
 
@@ -520,6 +524,15 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 		if (!vhd) {
 			lwsl_err("%s: NULL vhd\n", __func__);
 			return -1;
+		}
+
+		if (strstr(priv->url, "/blame")) {
+			int ongoing, possible, queue_depth;
+
+			lws_threadpool_diagnose(vhd->tp, &ongoing, &possible, &queue_depth);
+
+			if (ongoing >= 1 || queue_depth)
+				priv->blame_overloaded = 1;
 		}
 
 		if (!lws_threadpool_enqueue(vhd->tp, &targs, "goh-%s",

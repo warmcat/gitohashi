@@ -111,6 +111,7 @@ struct jg2_ctx_create_args {
 	const char *repo_path; /**< filesystem path to the repo */
 #define JG2_CTX_FLAG_HTML 1
 #define JG2_CTX_FLAG_BOT 2
+#define JG2_CTX_FLAG_BLAME_OVERLOADED 4
 	int flags; /**< bitwise-ORed flags: JG2_CTX_FLAG_HTML = generate HTML
 			around the JSON, using the vhost HTML file;
 			absent = pure JSON, JG2_CTX_FLAG_BOT = don't create
