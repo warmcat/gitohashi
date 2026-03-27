@@ -628,18 +628,22 @@ void
 job_common_header(struct jg2_ctx *ctx)
 {
 	char path[128], *p;
-	size_t l = strlen(ctx->vhost->cfg.json_cache_base);
+	size_t l;
 
-	if (strlen(ctx->cache) < l + 6) {
-		path[0] = '?';
-		path[1] = '\0';
-	} else {
-		strncpy(path, ctx->cache + l + 5, sizeof(path) - 1);
-		path[sizeof(path) - 1] = '\0';
+	if (ctx->vhost->cfg.json_cache_base) {
+		l = strlen(ctx->vhost->cfg.json_cache_base);
 
-		p = strchr(path, '~');
-		if (p)
-			*p = '\0';
+		if (strlen(ctx->cache) < l + 6) {
+			path[0] = '?';
+			path[1] = '\0';
+		} else {
+			strncpy(path, ctx->cache + l + 5, sizeof(path) - 1);
+			path[sizeof(path) - 1] = '\0';
+
+			p = strchr(path, '~');
+			if (p)
+				*p = '\0';
+		}
 	}
 
 	CTX_BUF_APPEND("{"

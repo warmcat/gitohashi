@@ -243,7 +243,7 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 		if (jg2_gitolite3_interface(&jg2_global, config->repo_base_dir)) {
 			lwsl_err("couldn't init gl3 interface\n");
 
-			goto bail;
+			// goto bail;
 		}
 		lwsl_notice("%s: created gl3 interface, detected v%d\n",
 				__func__, jg2_global.gitolite_version);
@@ -379,7 +379,7 @@ __jg2_ctx_destroy(struct jg2_ctx *ctx)
 		pthread_mutex_unlock(&ctx->jrepo->lock);
 	}
 
-	if (!ctx->jrepo->ctx_repo_list) {
+	if (ctx->jrepo && !ctx->jrepo->ctx_repo_list) {
 		/* nobody using this logical repo any more */
 		struct jg2_repo *r, **ro;
 
