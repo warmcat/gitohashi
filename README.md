@@ -197,6 +197,14 @@ with that is it can use parse gitolite ACLs from the same repo base directory.
 That allows you to use gitolite config to control which repos gitohashi can
 access and set information about them.
 
+IMPORTANT
+
+If you're using directory sticky bits to keep the repository readable by both
+gitohashi and gitolite, you must change gitolite's default UMASK of 0077,
+which tells it to ignore your arrangements, to 0027, which tells it to respect
+your arragements.  You can find .gitolite.rc in the directory you set up
+gitolite to use in your /etc/passwd
+
 Full details: [README-gitolite.md](./doc/README-gitolite.md) 
 
 ## Caching in gitohashi

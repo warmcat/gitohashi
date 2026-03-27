@@ -379,7 +379,6 @@ __jg2_ctx_destroy(struct jg2_ctx *ctx)
 		pthread_mutex_unlock(&ctx->jrepo->lock);
 	}
 
-#if 0
 	if (!ctx->jrepo->ctx_repo_list) {
 		/* nobody using this logical repo any more */
 		struct jg2_repo *r, **ro;
@@ -398,7 +397,6 @@ __jg2_ctx_destroy(struct jg2_ctx *ctx)
 
 		jg2_repo_destroy(ctx->jrepo);
 	}
-#endif
 
 	jg2_repopath_destroy(&ctx->sr);
 

@@ -17,6 +17,49 @@ Additionally:
    This disallows the common email format "Name <name@email.com>"... gitohashi
    understands "Name name@email.com" as well in order to get around this.
 
+### Setting up repos for access by both gitohashi and gitolite (git)
+
+1) If you're using directory sticky bits to keep the repository readable by both
+gitohashi and gitolite, you must change gitolite's default UMASK of 0077,
+which tells it to ignore your arrangements, to 0027, which tells it to respect
+your arragements.  You can find .gitolite.rc in the directory you set up
+gitolite to use in your /etc/passwd
+
+2) You also must amend the same .gitolite.rc to have
+
+    GIT_CONFIG_KEYS                 =>  'gitweb.description gitweb.owner gitweb.url core\.sharedRepository',
+
+3) When setting up your gitolite-admin repo, each repo in conf/gitolite.conf
+ must include the line
+
+        config core.sharedRepository = group
+
+4) Then, you can run this one time at the top of your repository (/srv/gitolite in
+this example)
+
+```
+#/bin/sh
+
+cd /srv/gitolite
+
+for i in `find . -name config` ; do
+        chown git $i
+        cd `dirname $i`
+        pwd
+        git config core.sharedRepository group # Update the git config
+        git config receive.denynonfastforwards false
+        chgrp -R apache . # Change files and directory group
+        chmod -R 6770 . # Change permissions
+        chown -R git .
+        chmod u+s .
+        chmod g-w objects/pack/* # Git pack files should be immutable
+        chmod g+s `find . -type d` # New files get group id of directory
+        chmod u+s `find . -type d` # New files get group id of directory
+
+        cd /srv/gitolite
+done
+```
+
 ### Selecting which repos to show on a vhost
 
 By default, no repo is allowed to be shown, even when the vhost has supplied the

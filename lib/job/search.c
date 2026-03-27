@@ -74,11 +74,13 @@ job_search_destroy(struct jg2_ctx *ctx)
 		if (ctx->stack[n].tree) {
 			if (ctx->stack[n].path)
 				free(ctx->stack[n].path);
-			//if (ctx->stack[n].tree)
-			//	git_tree_free(ctx->stack[n].tree);
+			if (ctx->stack[n].tree)
+				git_tree_free(ctx->stack[n].tree);
 			/*
 			 * libgit2 docs say don't free lev->tree... it seems it
 			 * is cached and removed by lru inside libgit2
+			 * UPDATE: This is incorrect. lookup creates a strong
+			 * reference that must be freed to avoid catastrophic leaks.
 			 */
 			ctx->stack[n].tree = NULL;
 		}
@@ -407,7 +409,8 @@ job_search_start(struct jg2_ctx *ctx)
 
 			free(lev->path);
 			lev->path = NULL;
-			// git_tree_free(lev->tree);
+			if (lev->tree)
+				git_tree_free(lev->tree);
 			/*
 			 * libgit2 docs say don't free lev->tree... it seems it
 			 * is cached and removed by lru inside libgit2
@@ -428,7 +431,7 @@ job_search_start(struct jg2_ctx *ctx)
 		}
 
 		switch (git_tree_entry_type(te)) {
-			char path[256];
+			char path[4096];
 			const char *ten;
 			int len;
 
@@ -700,7 +703,7 @@ index:
 		}
 
 		switch (git_tree_entry_type(te)) {
-			char path[256];
+			char path[4096];
 			const char *ten;
 			int len;
 

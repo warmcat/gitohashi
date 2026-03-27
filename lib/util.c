@@ -125,7 +125,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 			sr->e[JG2_PE_SEARCH] = (const char *)pp;
 			while (*pp) {
                                if (*pp != '_' && *pp != '-' && *pp != '.' && !isalnum(*pp)) {
-                                       lwsl_err("%s: JG2_PE_BRANCH %s\n", __func__, sr->e[JG2_PE_BRANCH]);
+                                       lwsl_err("%s: JG2_PE_SEARCH %s\n", __func__, sr->e[JG2_PE_SEARCH]);
 					*pp = '\0';
 					break;
 				}

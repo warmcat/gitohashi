@@ -149,6 +149,11 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 
 	/* wasn't able to get started... destroy req */
 
+	if (r->fd >= 0) {
+		close(r->fd);
+		unlink(r->filepath_temp);
+	}
+
 	lws_dll2_remove(&r->next);
 	free(r);
 
@@ -338,6 +343,10 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
 		p = (const char *)in;
 		if (*p == '/')
 			p++;
+
+		if (!p[0] || !p[1])
+			return -1;
+
 		lws_snprintf(pss->path, sizeof(pss->path), "%s/%c/%c/%s",
 			     vhd->cache_dir, p[0], p[1], p);
 

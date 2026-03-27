@@ -138,9 +138,9 @@ static int
 job_snapshot_start(struct jg2_ctx *ctx)
 {
 	int e, l, n, comp = -1;
-	const char *p, *p1;
+	const char *p, *p1, *base;
 	git_generic_ptr u;
-	char pure[256];
+	char pure[4096];
 	git_commit *c;
 	git_oid oid;
 
@@ -274,11 +274,22 @@ job_snapshot_start(struct jg2_ctx *ctx)
 		goto bail;
 	}
 
-	n = lws_ptr_diff(p, ctx->sr.e[JG2_PE_PATH]);
+	base = strrchr(ctx->sr.e[JG2_PE_PATH], '/');
+	if (base)
+		base++;
+	else
+		base = ctx->sr.e[JG2_PE_PATH];
+
+	if (p < base) {
+		lwsl_err("%s: invalid path format\n", __func__);
+		goto bail;
+	}
+
+	n = lws_ptr_diff(p, base);
 	if (n > (int)sizeof(pure) - 2)
 		n = (int)sizeof(pure) - 2;
 
-	strncpy(pure, ctx->sr.e[JG2_PE_PATH], n);
+	strncpy(pure, base, n);
 	pure[n++] = '/';
 	pure[n] = '\0';
 
@@ -333,7 +344,7 @@ job_snapshot(struct jg2_ctx *ctx)
 {
 	struct archive_entry *ae;
 	size_t avail, nc, use;
-	char path[256];
+	char path[4096];
 	int n;
 
 	if (ctx->destroying) {
