@@ -86,8 +86,8 @@ static int
 __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 {
 	struct lws_client_connect_info i;
-	const char *prot, *opath;
-	char *tmp, u[128];
+	lws_parse_uri_t *puri;
+	char u[128];
 	struct lws *wsi;
 
 	lws_snprintf(r->filepath_temp, sizeof(r->filepath_temp), "%s~%d-%p",
@@ -105,15 +105,16 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 	i.context = vhd->context;
 	i.ssl_connection = LCCSCF_PIPELINE /* | LCCSCF_ALLOW_SELFSIGNED */;
 
-	tmp = strdup(vhd->remote_base);
-	if (lws_parse_uri(tmp, &prot, &i.address, &i.port, &opath)) {
-		lwsl_notice("%s: parse uri %s: failed\n", __func__, tmp);
-		free(tmp);
+	puri = lws_parse_uri_create(vhd->remote_base);
+	if (!puri) {
+		lwsl_notice("%s: parse uri %s: failed\n", __func__, vhd->remote_base);
 		return 1;
 	}
-	if (!strcmp(prot, "https"))
+	if (!strcmp(puri->scheme, "https"))
 		i.ssl_connection |= LCCSCF_USE_SSL;
 
+	i.address = puri->host;
+	i.port = puri->port;
 	i.host = i.address;
 	i.origin = i.address;
 	i.method = "GET";
@@ -135,17 +136,17 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 
 	wsi = lws_client_connect_via_info(&i);
 	if (wsi) {
-		lwsl_debug("%s: requested %s %s:%d %s\n", __func__, prot,
+		lwsl_debug("%s: requested %s %s:%d %s\n", __func__, puri->scheme,
 				i.address, i.port, r->urlpath);
-		free(tmp);
+		lws_parse_uri_destroy(&puri);
 
 		return 0;
 	}
 
-	lwsl_notice("%s: failed %s %s:%d %s\n", __func__, prot, i.address,
+	lwsl_notice("%s: failed %s %s:%d %s\n", __func__, puri->scheme, i.address,
 		    i.port, u);
 
-	free(tmp);
+	lws_parse_uri_destroy(&puri);
 
 	/* wasn't able to get started... destroy req */
 

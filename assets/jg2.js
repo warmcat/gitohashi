@@ -1960,7 +1960,8 @@ function display(j)
 		s += "<tr class='repobar'><td class='repobar'><div class='repobar'>" +
 		     "<table><tr><td><span class='reponame'>" +
 			 "<a href='" + makeurl() + "'>" +
-			 "<img class='repolist'></a>&nbsp;&nbsp;<a href=\"" +
+			 "<img class='repolist'></a>&nbsp;&nbsp;" +
+			 "<span id='lws-user-info' class='user-info'></span>&nbsp;&nbsp;<a href=\"" +
 		     makeurl(reponame, "summary", null, null, null, null) + "\">" +
 		     reponame + "</a>&nbsp;&nbsp;</span></td><td class='tight'>";
 
@@ -2095,6 +2096,7 @@ function display(j)
 	relpre_no_mode += q[0] + '/';
 	
 	if (!blog_mode && q.length <= 2 && !reponame) {
+			s += "<tr><td><div id='lws-user-info' class='user-info'></div></td></tr>";
 			s += "<tr><td class='repolist'>" + html_repolist(j, now) +
 			"</td></tr>";
 		document.getElementById("result").innerHTML = s + "</table>";
@@ -2522,6 +2524,9 @@ document.addEventListener("DOMContentLoaded", function() {
 			parse_json(j);
 			display(j);
 			//init.remove();
+			
+			if (typeof renderLwsLoginStatus === 'function')
+				renderLwsLoginStatus('lws-user-info');
 		}
 		
 		var st = document.getElementById("gitohashi-stats");
