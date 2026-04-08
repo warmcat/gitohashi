@@ -207,6 +207,47 @@ gitolite to use in your /etc/passwd
 
 Full details: [README-gitolite.md](./doc/README-gitolite.md) 
 
+## Static Blog Mode
+
+Gitohashi natively supports rendering any Git repository as a statically-generated blog feed, allowing you to seamlessly serve a paginated feed of Markdown articles grouped by date. This functionality requires no extra configuration scripts and pulls directly from standard Git commit contents.
+
+### Preparing the Repository Structure
+To configure a repository for blog mode, you must structure the filesystem into nested directories grouped by date based on the Gregorian calendar (`YYYY/MM/DD`). 
+
+Whenever a user visits the root of your blog mount point (e.g., `https://warmcat.com/git/myblog/blog`), Gitohashi will gracefully reverse-chronologically traverse the repository directories and retrieve all `.md` files found at the day depth.
+
+Example directory structure:
+```
+my-blog-repo/
+├── 2026/
+│   └── 04/
+│       └── 08/
+│           ├── first-post.md
+│           └── image1.jpg
+├── 2025/
+...
+```
+
+### Example Markdown Article
+When Gitohashi discovers your `.md` files, it scrapes the first few kilobytes to extract the post's **title**, brief text **summary**, and a routed **image** to use as a cover block on your index feed.
+
+For example, `2026/04/08/first-post.md` might look like:
+
+```markdown
+# My First Post
+
+This is a small summary that Gitohashi will extract for the front page feed!
+
+![cover image](image1.jpg)
+
+When users click the article, they will be taken to a dedicated page where this entire file is rendered natively using Showdown.js.
+```
+
+### Child URL Paths & Routing
+When visitors browse your site, Gitohashi transparently maps paths:
+- **Root View:** `https://your-domain/git/myblog/blog` (Generates the reverse chronological feed)
+- **Child View:** `https://your-domain/git/myblog/tree/2026/04/08/first-post.md` (Renders the individual Markdown file natively)
+
 ## Caching in gitohashi
 
 To minimize the cost of generated, external and static page assets, gitohashi
