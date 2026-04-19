@@ -314,6 +314,7 @@ static int
 __jg2_ctx_destroy(struct jg2_ctx *ctx)
 {
 	struct jg2_ctx **oc = NULL, *c = NULL;
+	int repo_list_empty = 0;
 
 	if (!ctx)
 		return 0;
@@ -358,7 +359,7 @@ __jg2_ctx_destroy(struct jg2_ctx *ctx)
 
 	/* remove ourselves from "ctx using repo" list */
 
-	if (ctx->jrepo && ctx->jrepo->ctx_repo_list) {
+	if (ctx->jrepo) {
 		pthread_mutex_lock(&ctx->jrepo->lock);
 
 		c = NULL;
@@ -376,10 +377,12 @@ __jg2_ctx_destroy(struct jg2_ctx *ctx)
 			c = c->ctx_using_repo_next;
 		}
 
+		repo_list_empty = !ctx->jrepo->ctx_repo_list;
+
 		pthread_mutex_unlock(&ctx->jrepo->lock);
 	}
 
-	if (ctx->jrepo && !ctx->jrepo->ctx_repo_list) {
+	if (ctx->jrepo && repo_list_empty) {
 		/* nobody using this logical repo any more */
 		struct jg2_repo *r, **ro;
 
