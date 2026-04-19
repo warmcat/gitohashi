@@ -100,10 +100,11 @@ job_spool_from_cache(struct jg2_ctx *ctx)
 	}
 
 	if (n < (int)sizeof(ctx->last_from_cache)) {
-		size_t m, old = sizeof(ctx->last_from_cache) - (size_t)n;
-		for (m = 0; m < old; m++)
-			ctx->last_from_cache[m] = ctx->last_from_cache[old + m];
-		memcpy(ctx->last_from_cache + old, ctx->p, n);
+		if (n > 0) {
+			size_t keep = sizeof(ctx->last_from_cache) - (size_t)n;
+			memmove(ctx->last_from_cache, ctx->last_from_cache + n, keep);
+			memcpy(ctx->last_from_cache + keep, ctx->p, n);
+		}
 	} else
 		memcpy(ctx->last_from_cache, ctx->p + (size_t)n - sizeof(ctx->last_from_cache), sizeof(ctx->last_from_cache));
 
