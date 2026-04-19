@@ -704,11 +704,15 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 		cache_write_complete(ctx);
 	}
 
+	pthread_mutex_lock(&ctx->vhost->lock);
+
 	if (ctx->vhost->cache_tries)
 		pc = (ctx->vhost->cache_hits * 100) / ctx->vhost->cache_tries;
 
 	if (ctx->vhost->etag_tries)
 		pc1 = (ctx->vhost->etag_hits * 100) / ctx->vhost->etag_tries;
+
+	pthread_mutex_unlock(&ctx->vhost->lock);
 
 	if (!ctx->no_rider && !jg2_job_naked(ctx)) {
 		if (bl || (!mode || strcmp(mode, "blame"))) {
