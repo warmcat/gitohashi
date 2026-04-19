@@ -523,6 +523,7 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 
 		if (!vhd) {
 			lwsl_err("%s: NULL vhd\n", __func__);
+			cleanup_task_private_data(wsi, priv);
 			return -1;
 		}
 
