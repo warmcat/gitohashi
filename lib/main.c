@@ -415,6 +415,7 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 {
 	struct jg2_repo *r, *r1;
 	struct jg2_vhost *vh, **ovh;
+	int global_empty = 0;
 
 	pthread_mutex_lock(&vhost->lock); /* ===================== vhost lock */
 
@@ -480,9 +481,11 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 		vh = vh->vhost_list;
 	}
 
+	global_empty = !jg2_global.vhost_head;
+
 	pthread_mutex_unlock(&jg2_global.lock); /* ------------ global unlock */
 
-	if (!jg2_global.vhost_head) {
+	if (global_empty) {
 		jg2_gitolite3_interface_destroy(&jg2_global);
 		/* we were the last vhost going away, destroy global assets */
 		pthread_mutex_destroy(&jg2_global.lock);
