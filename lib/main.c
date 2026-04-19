@@ -32,6 +32,7 @@
 static struct jg2_global jg2_global;
 
 static pthread_mutex_t jg2_global_init_lock = PTHREAD_MUTEX_INITIALIZER;
+static int jg2_global_vhost_count;
 
 void
 jg2_repo_ref_destroy(struct jg2_ref *r)
@@ -241,7 +242,7 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 
 	pthread_mutex_lock(&jg2_global_init_lock);
 
-	if (!jg2_global.vhost_head) {
+	if (!jg2_global_vhost_count) {
 		pthread_mutex_init(&jg2_global.lock, NULL);
 
 		if (jg2_gitolite3_interface(&jg2_global, config->repo_base_dir)) {
@@ -252,6 +253,9 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 		lwsl_notice("%s: created gl3 interface, detected v%d\n",
 				__func__, jg2_global.gitolite_version);
 	}
+	jg2_global_vhost_count++;
+
+	pthread_mutex_unlock(&jg2_global_init_lock);
 
 	/* add ourselves to the global vhost list */
 
@@ -260,8 +264,6 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 	jg2_global.vhost_head = vhost;
 	vhost->jg2_global = &jg2_global;
 	pthread_mutex_unlock(&jg2_global.lock); /* ------------ global unlock */
-
-	pthread_mutex_unlock(&jg2_global_init_lock);
 
 	pthread_mutex_lock(&vhost->lock); /* ===================== vhost lock */
 
@@ -421,7 +423,6 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 {
 	struct jg2_repo *r, *r1;
 	struct jg2_vhost *vh, **ovh;
-	int global_empty = 0;
 
 	pthread_mutex_lock(&vhost->lock); /* ===================== vhost lock */
 
@@ -474,8 +475,6 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 
 	/* remove ourselves from the global vhost list */
 
-	pthread_mutex_lock(&jg2_global_init_lock);
-
 	pthread_mutex_lock(&jg2_global.lock); /* ================ global lock */
 
 	ovh = &jg2_global.vhost_head;
@@ -489,16 +488,15 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 		vh = vh->vhost_list;
 	}
 
-	global_empty = !jg2_global.vhost_head;
-
 	pthread_mutex_unlock(&jg2_global.lock); /* ------------ global unlock */
 
-	if (global_empty) {
+	pthread_mutex_lock(&jg2_global_init_lock);
+	jg2_global_vhost_count--;
+	if (!jg2_global_vhost_count) {
 		jg2_gitolite3_interface_destroy(&jg2_global);
 		/* we were the last vhost going away, destroy global assets */
 		pthread_mutex_destroy(&jg2_global.lock);
 	}
-
 	pthread_mutex_unlock(&jg2_global_init_lock);
 
 	pthread_mutex_destroy(&vhost->lock);

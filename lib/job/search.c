@@ -501,7 +501,15 @@ job_search_start(struct jg2_ctx *ctx)
 
 	} while (1);
 
-	lwsl_notice("Task extent: %d files\n", ctx->ongoing->index_files_to_do);
+	{
+		int extent;
+
+		pthread_mutex_lock(&ctx->vhost->lock);
+		extent = ctx->ongoing->index_files_to_do;
+		pthread_mutex_unlock(&ctx->vhost->lock);
+
+		lwsl_notice("Task extent: %d files\n", extent);
+	}
 
 	/* get ready to walk the entire tree */
 
@@ -760,7 +768,9 @@ index:
 			if (!w->suff)
 				continue;
 
+			pthread_mutex_lock(&ctx->vhost->lock);
 			ctx->ongoing->index_files_done++;
+			pthread_mutex_unlock(&ctx->vhost->lock);
 
 			if (git_blob_lookup(&ctx->u.blob, ctx->jrepo->repo,
 					    git_tree_entry_id(te))) {
