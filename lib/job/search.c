@@ -38,9 +38,6 @@ remove_ongoing(struct jg2_ctx *ctx)
 	struct ongoing_index **pon;
 	int n = ctx->destroying;
 
-	if (!ctx->ongoing)
-		return;
-
 	/*
 	 * on the ctx->destroying / __jg2_ctx_destroy() path, the vh lock
 	 * is already held
@@ -48,17 +45,21 @@ remove_ongoing(struct jg2_ctx *ctx)
 
 	if (!n)
 		pthread_mutex_lock(&ctx->vhost->lock); /* ======== vhost lock */
-	pon = &ctx->jrepo->indexing_list;
-	while (*pon) {
-		if (*pon == ctx->ongoing) {
-			*pon = ctx->ongoing->next;
-			lwsl_err("---------- ongoing free %p\n", ctx->ongoing);
-			ctx->ongoing = NULL;
-			free(ctx->ongoing);
-			break;
+
+	if (ctx->ongoing) {
+		pon = &ctx->jrepo->indexing_list;
+		while (*pon) {
+			if (*pon == ctx->ongoing) {
+				*pon = ctx->ongoing->next;
+				lwsl_err("---------- ongoing free %p\n", ctx->ongoing);
+				ctx->ongoing = NULL;
+				free(ctx->ongoing);
+				break;
+			}
+			pon = &(*pon)->next;
 		}
-		pon = &(*pon)->next;
 	}
+
 	if (!n)
 		pthread_mutex_unlock(&ctx->vhost->lock); /* ---- vhost unlock */
 }
