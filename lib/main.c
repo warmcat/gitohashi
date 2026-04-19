@@ -31,6 +31,8 @@
 
 static struct jg2_global jg2_global;
 
+static pthread_mutex_t jg2_global_init_lock = PTHREAD_MUTEX_INITIALIZER;
+
 void
 jg2_repo_ref_destroy(struct jg2_ref *r)
 {
@@ -237,6 +239,8 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 
 	email_vhost_init(vhost);
 
+	pthread_mutex_lock(&jg2_global_init_lock);
+
 	if (!jg2_global.vhost_head) {
 		pthread_mutex_init(&jg2_global.lock, NULL);
 
@@ -256,6 +260,8 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 	jg2_global.vhost_head = vhost;
 	vhost->jg2_global = &jg2_global;
 	pthread_mutex_unlock(&jg2_global.lock); /* ------------ global unlock */
+
+	pthread_mutex_unlock(&jg2_global_init_lock);
 
 	pthread_mutex_lock(&vhost->lock); /* ===================== vhost lock */
 
@@ -468,6 +474,8 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 
 	/* remove ourselves from the global vhost list */
 
+	pthread_mutex_lock(&jg2_global_init_lock);
+
 	pthread_mutex_lock(&jg2_global.lock); /* ================ global lock */
 
 	ovh = &jg2_global.vhost_head;
@@ -490,6 +498,8 @@ jg2_vhost_destroy(struct jg2_vhost *vhost)
 		/* we were the last vhost going away, destroy global assets */
 		pthread_mutex_destroy(&jg2_global.lock);
 	}
+
+	pthread_mutex_unlock(&jg2_global_init_lock);
 
 	pthread_mutex_destroy(&vhost->lock);
 
