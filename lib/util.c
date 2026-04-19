@@ -504,17 +504,23 @@ int
 jg2_oid_to_ref_names(const git_oid *oid, struct jg2_ctx *ctx,
 		     struct jg2_ref **result, int max)
 {
-	struct jg2_ref *ref = ctx->jrepo->ref_list_hash[jg2_oidbin(oid)];
+	struct jg2_ref *ref;
 	int n = 0;
+
+	pthread_mutex_lock(&ctx->jrepo->lock);
+
+	ref = ctx->jrepo->ref_list_hash[jg2_oidbin(oid)];
 
 	while (ref) {
 		if (!git_oid_cmp(&ref->oid, oid)) {
 			*result++ = ref;
 			if (++n == max)
-				return n;
+				break;
 		}
 		ref = ref->hash_next;
 	}
+
+	pthread_mutex_unlock(&ctx->jrepo->lock);
 
 	return n;
 }
