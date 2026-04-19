@@ -36,15 +36,13 @@ static void
 remove_ongoing(struct jg2_ctx *ctx)
 {
 	struct ongoing_index **pon;
-	int n = ctx->destroying;
 
 	/*
-	 * on the ctx->destroying / __jg2_ctx_destroy() path, the vh lock
-	 * is already held
+	 * vhost lock is a recursive mutex, so we safely acquire it
+	 * unconditionally here even if we are on the ctx->destroying path.
 	 */
 
-	if (!n)
-		pthread_mutex_lock(&ctx->vhost->lock); /* ======== vhost lock */
+	pthread_mutex_lock(&ctx->vhost->lock); /* ======== vhost lock */
 
 	if (ctx->ongoing) {
 		pon = &ctx->jrepo->indexing_list;
@@ -60,8 +58,7 @@ remove_ongoing(struct jg2_ctx *ctx)
 		}
 	}
 
-	if (!n)
-		pthread_mutex_unlock(&ctx->vhost->lock); /* ---- vhost unlock */
+	pthread_mutex_unlock(&ctx->vhost->lock); /* ---- vhost unlock */
 }
 
 static void
