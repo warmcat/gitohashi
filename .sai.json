@@ -16,7 +16,7 @@
 	},
 	"configurations": {
 		"default": {
-			"prep":		"cd .. && rm -rf libwebsockets && git clone https://libwebsockets.org/repo/libwebsockets && cd libwebsockets && mkdir build && cd build && cmake .. -DLWS_FOR_GITOHASHI=1 && make -j && cd ../../gitohashi &&",
+			"prep":		"cd .. && rm -rf libwebsockets && git clone https://libwebsockets.org/repo/libwebsockets && cd libwebsockets && mkdir build && cd build && cmake .. -DLWS_FOR_GITOHASHI=1 && make -j && cd ../../src &&",
 			"cmake":	"-DGOH_LWS_INC_PATH=../../libwebsockets/build/include -DGOH_LWS_LIB_PATH=../../libwebsockets/build/lib/libwebsockets.so",
 			"cpack":	"&& cpack $SAI_CPACK",
 			"artifacts":	"build/*.rpm, build/*.deb, build/*.zip"
