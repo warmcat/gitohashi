@@ -1004,15 +1004,23 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 				break;
 			}
 
-			if (ctx->job_cache_query != LWS_DISKCACHE_QUERY_EXISTS &&
-			    search && !ctx->did_sat && ctx->sr.e[JG2_PE_PATH]) {
-				ctx->job_state = EMIT_STATE_TREE;
-				jg2_ctx_set_job(ctx, JG2_JOB_SEARCH, vid, 0,
-						JG2_JOB_FLAG_CHAINED |
-						JG2_JOB_FLAG_FINAL);
-				ctx->did_sat = 1;
-				ctx->meta = 1;
-				break;
+			{
+				int jcq;
+
+				pthread_mutex_lock(&ctx->vhost->lock);
+				jcq = ctx->job_cache_query;
+				pthread_mutex_unlock(&ctx->vhost->lock);
+
+				if (jcq != LWS_DISKCACHE_QUERY_EXISTS &&
+				    search && !ctx->did_sat && ctx->sr.e[JG2_PE_PATH]) {
+					ctx->job_state = EMIT_STATE_TREE;
+					jg2_ctx_set_job(ctx, JG2_JOB_SEARCH, vid, 0,
+							JG2_JOB_FLAG_CHAINED |
+							JG2_JOB_FLAG_FINAL);
+					ctx->did_sat = 1;
+					ctx->meta = 1;
+					break;
+				}
 			}
 
 			if (ctx->blame_after_tree && !ctx->did_bat &&
