@@ -4,6 +4,14 @@
 	"platforms": {
                 "rocky9/aarch64-a72a55-rk3588/gcc": {
 			"build": "${prep} mkdir build destdir;cd build;export CCACHE_DISABLE=1;export SAI_CPACK=\"-G RPM\";cmake .. ${cmake} && make -j && make -j DESTDIR=../destdir install && ctest -j4 --output-on-failure ${cpack}"
+		},
+		"coverity/x86_64/gcc": {
+			"default": false,
+                        "build": [
+				"mkdir -p build destdir; cd build; CCACHE_DISABLE=1 LD_LIBRARY_PATH=../destdir/usr/local/share/libwebsockets-test-server/plugins:../destdir/usr/local/lib cmake .. ${cmake}",
+                                "cd build && export PATH=\"/opt/cov-analysis-linux64-2024.12.1/bin:$PATH\" && cov-build --dir cov-int make -j$SAI_PARALLEL",
+                                "cd build && SAI_CPACK=\"-G RPM\" ${cpack}"
+			]
 		}
 	},
 	"configurations": {
@@ -12,7 +20,14 @@
 			"cmake":	"-DGOH_LWS_INC_PATH=../../libwebsockets/build/include -DGOH_LWS_LIB_PATH=../../libwebsockets/build/lib/libwebsockets.so",
 			"cpack":	"&& cpack $SAI_CPACK",
 			"artifacts":	"build/*.rpm, build/*.deb, build/*.zip"
+		},
+		"coverity": {
+			"cmake":	"",
+			"platforms":	"none, coverity/x86_64/gcc",
+			"cpack":	"export STAMP=`git log -1 --pretty=format:%h` && rm -f gitohashi.tgz && tar czvf gitohashi.tgz cov-int && script -e -q -c \"cat /etc/coverity/secrets-gitohashi.sh | lws-minimal-http-client-post-form --h1 https://scan.coverity.com:443/builds?project=gitohashi --form file=@gitohashi.tgz --form version=${STAMP} --form 'description=gitohashi qa'\" /dev/null",
+			"branches":	"coverity"
 		}
+
 	}
 }
 
