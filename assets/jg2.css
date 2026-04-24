@@ -138,6 +138,38 @@ span.blogdate {
 	font-size: 115%;
 	font-style: italic;
 }
+div.blogsummary img {
+	max-width: 300px;
+	height: auto;
+}
+
+div.blog-post-summary {
+	background-color: rgba(240, 240, 240, 0.5);
+	border-radius: 8px;
+	padding: 15px;
+	margin-bottom: 20px;
+	box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+	transition: box-shadow 0.2s, background-color 0.2s;
+}
+
+a.blog-post-link {
+	text-decoration: none;
+	color: inherit;
+	display: block;
+}
+
+a.blog-post-link:hover div.blog-post-summary {
+	box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.15);
+	background-color: rgba(230, 230, 230, 0.6);
+}
+
+div.warning-banner {
+	background-color: #f8d7da;
+	color: #721c24;
+	padding: 10px;
+	border: 1px solid #f5c6cb;
+	margin-bottom: 15px;
+}
 
 div.jg2-tree {
 	background-color: #f0f0f0;

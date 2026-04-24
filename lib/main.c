@@ -591,26 +591,48 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 	 * begins with '+'.
 	 */
 
+	/*
+	 * ensure that the repodir is prepared with the repo list and this
+	 * vhost's acls
+	 */
+	pthread_mutex_lock(&vhost->repodir->lock); /* ========== repodir lock */
+	__jg2_conf_gitolite_admin_head(ctx);
+
 	if (ctx->sr.e[JG2_PE_NAME]) {
 		const char *str;
 		const struct repo_entry_info *rei;
-		struct jg2_repodir *rd = vhost->repodir;
 
-		pthread_mutex_lock(&rd->lock); /* ============== repodir lock */
-
-		rei = __jg2_repodir_repo(rd, ctx->sr.e[JG2_PE_NAME]);
+		rei = __jg2_repodir_repo(vhost->repodir, ctx->sr.e[JG2_PE_NAME]);
 		if (rei) {
 			str = jg2_rei_string(rei, REI_STRING_CONFIG_DESC);
 
 			if (str && str[0] == '+')
 				ctx->blog_mode = 1;
 		}
-
-		pthread_mutex_unlock(&rd->lock); /* ---------- repodir unlock */
 	}
+	pthread_mutex_unlock(&vhost->repodir->lock); /* ---------- repodir unlock */
 
-	if (ctx->blog_mode && !ctx->sr.e[JG2_PE_MODE])
-		ctx->sr.e[JG2_PE_MODE] = "blog";
+	if (ctx->blog_mode) {
+		if (!ctx->sr.e[JG2_PE_MODE])
+			ctx->sr.e[JG2_PE_MODE] = "blog";
+		else {
+			const char *m = ctx->sr.e[JG2_PE_MODE];
+			if (strcmp(m, "plain") && strcmp(m, "snapshot") &&
+			    strcmp(m, "patch") && strcmp(m, "tree") &&
+			    strcmp(m, "blame") && strcmp(m, "log") &&
+			    strcmp(m, "commit") && strcmp(m, "search") &&
+			    strcmp(m, "ac") && strcmp(m, "tags") &&
+			    strcmp(m, "branches") && strcmp(m, "summary") &&
+			    strcmp(m, "blog")) {
+				if (ctx->sr.e[JG2_PE_PATH]) {
+					char *restore_slash = (char *)ctx->sr.e[JG2_PE_PATH] - 1;
+					*restore_slash = '/';
+				}
+				ctx->sr.e[JG2_PE_PATH] = ctx->sr.e[JG2_PE_MODE];
+				ctx->sr.e[JG2_PE_MODE] = "tree";
+			}
+		}
+	}
 
 	/* /plain/, /snapshot/, /patch/ overrides sandwich mode */
 
@@ -630,13 +652,7 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 		*args->mimetype = "text/plain; charset=utf-8";
 
 
-	/*
-	 * ensure that the repodir is prepared with the repo list and this
-	 * vhost's acls
-	 */
-	pthread_mutex_lock(&vhost->repodir->lock); /* ========== repodir lock */
-	__jg2_conf_gitolite_admin_head(ctx);
-	pthread_mutex_unlock(&vhost->repodir->lock); /* ------ repodir unlock */
+
 
 	if (ctx->sr.e[JG2_PE_NAME] && ctx->sr.e[JG2_PE_NAME][0] &&
 	    jg2_acl_check(ctx, ctx->sr.e[JG2_PE_NAME], ctx->acl_user) &&

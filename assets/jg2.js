@@ -413,7 +413,7 @@ function san_nq(s)
 			 replace(/%/g, "&#37;");
 }
 
-var burger, menu_popup, j_avatar, menu_popup_archive, jf, blog_mode = 0;
+var burger, menu_popup, j_avatar, menu_popup_archive, jf, blog_mode = 0, blog_posts = [];
 
 function collect_offsetTop(e1)
 {
@@ -1346,8 +1346,12 @@ function html_tree(j, now)
 		bi = 1;
 	}
 	
-	if (blog_mode)
-		bi = 1;
+	if (blog_mode) {
+		if (j.items[1] && j.items[1].blob)
+			bi = 1;
+		else if (j.items[0] && j.items[0].blob)
+			bi = 0;
+	}
 	
 	if (j.items[bi] && j.items[bi].blob) {
 		
@@ -1445,6 +1449,57 @@ function html_repolist(j, now)
 	return s;
 }
 
+function html_bloglist(now)
+{
+	var n, s = "";
+
+	if (!blog_posts || !blog_posts.length)
+		return "";
+
+	var conv = null;
+	if (typeof showdown !== 'undefined') {
+		showdown.extension('sd_ext_plain', sd_ext_plain);
+		conv = new showdown.Converter({extensions: ['sd_ext_plain']});
+		conv.setOption('tables', '1');
+		conv.setFlavor('github');
+	}
+
+	s += "<div class='jg2-bloglist'>";
+	for (n = 0; n < blog_posts.length; n++) {
+		var date_str = "";
+		var name = blog_posts[n].name;
+		var lastSlash = name.lastIndexOf("/");
+		if (lastSlash > 0) {
+			date_str = name.substring(0, lastSlash);
+		}
+
+		var article_url = makeurl(reponame, null, san(blog_posts[n].name), qbranch, qid, qofs);
+		s += "<a class='blog-post-link' href=\"" + article_url + "\">";
+		s += "<div class='blog-post-summary'>";
+		s += "<span class='blogtitle'>" + san(blog_posts[n].title) + "</span><br>";
+		if (date_str) {
+			s += "<span class='blogdate'>" + san(date_str) + "</span><p>";
+		}
+		
+		doc_dir = "";
+		if (blog_posts[n].name) {
+			var nn = blog_posts[n].name.lastIndexOf("/");
+			if (nn > 0)
+				doc_dir = blog_posts[n].name.substr(0, nn + 1);
+		}
+
+		var text = blog_posts[n].summary.trim();
+		if (text.length)
+			text += "...";
+
+		var summary_html = conv ? conv.makeHtml(text) : san(text);
+		s += "<div class='blogsummary'>" + summary_html + "</div></div></a><br>";
+	}
+	s += "</div>";
+
+	return s;
+}
+
 function display_summary(j, now)
 {
 	var s = "<table>";
@@ -1473,31 +1528,31 @@ var doc_dir = "";
 var sd_ext_plain = function () {
   var ext1 = {
     type: 'output',
-    regex: '<img\ src=\"\./([^\"]*)',
-    replace: '<img\ \ src=\"' + makeurl(reponame, "plain", doc_dir + '$1', qbranch, qid, qofs)
+    regex: /<img src=\"\.\/([^\"]*)/g,
+    replace: function(match, p1) { return '<img src="' + makeurl(reponame, "plain", doc_dir + p1, qbranch, qid, qofs); }
   };
   var ext2 = {
     type: 'output',
-    regex: '<img\ src=\"(?!http:\/\/|https:\/\/|\/)([^\"]*)',
-    replace: '<img\ \ src=\"' + makeurl(reponame, "plain", doc_dir + '$1', qbranch, qid, qofs)
+    regex: /<img src=\"(?!http:\/\/|https:\/\/|\/)([^\"]*)/g,
+    replace: function(match, p1) { return '<img src="' + makeurl(reponame, "plain", doc_dir + p1, qbranch, qid, qofs); }
   };
   var ext3 = {
     type: 'output',
-    regex: '<img\ src=\"\/([^\"]*)',
-    replace: '<img\ src=\"' + makeurl(reponame, "plain", '$1', qbranch, qid, qofs)
+    regex: /<img src=\"\/([^\"]*)/g,
+    replace: function(match, p1) { return '<img src="' + makeurl(reponame, "plain", p1, qbranch, qid, qofs); }
   };
   var ext4 = {
     type: 'output',
-    regex: '<a\ href=\"\./([^\"]*)',
-    replace: '<a\ class=\"blogintlink\"\ href=\"' + makeurl(reponame, "tree", doc_dir + '$1', qbranch, qid, qofs)
+    regex: /<a href=\"\.\/([^\"]*)/g,
+    replace: function(match, p1) { return '<a class="blogintlink" href="' + makeurl(reponame, "tree", doc_dir + p1, qbranch, qid, qofs); }
   };
   var ext5 = {
     type: 'output',
-    regex: '<a\ href=\"http[s]*://([^\"]*)',
-    replace: '<a\ class=\"blogextlink\"\ href=\"https://' + '$1'
+    regex: /<a href=\"http[s]*:\/\/([^\"]*)/g,
+    replace: function(match, p1) { return '<a class="blogextlink" href="https://' + p1; }
   };
   
-  return [ext1, ext2, ext3, ext4, ext5];
+  return [ext3, ext1, ext2, ext4, ext5];
 };
 
 var last_mm, blametable, blamesel, blameotron;
@@ -1955,7 +2010,7 @@ function display(j)
 		var do_aliases = null, s1 = "", s2 = "", s3 = "", s4 = "";
 		
 		if (j.f & 8)
-			s += "<div class='warning-banner' style='background-color: #f8d7da; color: #721c24; padding: 10px; border: 1px solid #f5c6cb; margin-bottom: 15px;'>System overloaded: Blame disabled, showing tree instead.</div>";
+			s += "<div class='warning-banner'>System overloaded: Blame disabled, showing tree instead.</div>";
 
 		s += "<tr class='repobar'><td class='repobar'><div class='repobar'>" +
 		     "<table><tr><td><span class='reponame'>" +
@@ -2136,8 +2191,12 @@ function display(j)
 			s += "<tr><td><main role=\"main\">" + html_tree(j, now) + "</main></td></tr>";
 			break;
 		}
-	else
-		s += "<tr><td><main role=\"main\">" + html_tree(j, now) + "</main></td></tr>";
+	else {
+		if (blog_mode && (!q[1] || q[1] === ""))
+			s += "<tr><td><main role=\"main\">" + html_bloglist(now) + "</main></td></tr>";
+		else
+			s += "<tr><td><main role=\"main\">" + html_tree(j, now) + "</main></td></tr>";
+	}
 
 	s += "</table>";
 	
@@ -2147,7 +2206,8 @@ function display(j)
 
 	/* add class-based events now the objects exist */
 
-	document.getElementById("gohsearch").addEventListener("input",
+	if (document.getElementById("gohsearch"))
+		document.getElementById("gohsearch").addEventListener("input",
 								goh_search_input, false);
 	
 //	elems = document.getElementsByClassName("inline-identity");
@@ -2195,7 +2255,7 @@ function display(j)
 		var conv = new showdown.Converter({extensions: ['sd_ext_plain']});
 		hh = document.getElementById("do-showdown");
 		/* blog formatting? */
-		var hd = hh.textContent.substring(0, 1024), bf = 0, hdl = 0,
+		var hd = hh ? hh.textContent.substring(0, 1024) : "", bf = 0, hdl = 0,
 				hdhtml = "", hdhtmle = "";
 		
 		sp = hd.split('\n');
@@ -2213,9 +2273,9 @@ function display(j)
 		conv.setOption('tables', '1');
 		conv.setFlavor('github');
 
-		if (bf)
+		if (bf && hh)
 			hh.innerHTML = hdhtml + conv.makeHtml(hh.textContent.substr(hdl)) + hdhtmle;
-		else
+		else if (hh)
 			hh.innerHTML = "<main role=\"complementary\">" + conv.makeHtml(hh.textContent) + "</main>";
 
 	} else
@@ -2335,22 +2395,24 @@ function parse_json_reflist(j)
 	
 	branches.length = 0;
 	tags.length = 0;
+	blog_posts.length = 0;
 	
 	for (n = 0; n < j.items[0].reflist.length; n++) {
 		var l = j.items[0].reflist[n];
 		if (l.name.substr(0, 11) === "refs/heads/")
 			branches.push(l);
-		else
-			if (l.name.substr(0, 10) === "refs/tags/") {
-				if (l.summary.sig_tagger &&
-				    l.summary.sig_tagger.git_time)
-					l.summary.time = l.summary.sig_tagger.git_time.time;
-				if (!l.summary.sig_tagger && l.summary.sig_author)
-					l.summary.sig_tagger = l.summary.sig_author;
-				if (!l.summary.msg_tag && l.summary.msg)
-					l.summary.msg_tag = l.summary.msg;
-				tags.push(l);
-			}
+		else if (l.name.substr(0, 10) === "refs/tags/") {
+			if (l.summary.sig_tagger &&
+			    l.summary.sig_tagger.git_time)
+				l.summary.time = l.summary.sig_tagger.git_time.time;
+			if (!l.summary.sig_tagger && l.summary.sig_author)
+				l.summary.sig_tagger = l.summary.sig_author;
+			if (!l.summary.msg_tag && l.summary.msg)
+				l.summary.msg_tag = l.summary.msg;
+			tags.push(l);
+		} else {
+			blog_posts.push(l);
+		}
 	}
 	
 	branches.sort(comp_reftime);
@@ -2416,6 +2478,14 @@ function parse_json(j)
 	
 	if (rpath === "")
 		rpath = null;
+		
+	if ((j.f & 4) && rmode) {
+		var valid_modes = ["plain", "snapshot", "patch", "tree", "blame", "log", "commit", "search", "ac", "tags", "branches", "summary", "blog"];
+		if (valid_modes.indexOf(rmode) === -1) {
+			rpath = rmode + (rpath ? "/" + rpath : "");
+			rmode = "tree";
+		}
+	}
 	
 	u = window.location.href;
 	n = u.indexOf('?');

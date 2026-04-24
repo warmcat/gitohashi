@@ -41,6 +41,7 @@ struct task_data_gitohashi {
 	char final;
 	char outlive;
 	char blame_overloaded;
+	char force_nocache;
 };
 
 struct pss_gitohashi {
@@ -162,6 +163,9 @@ http_reply(struct lws *wsi, struct vhd_gitohashi *vhd,
 
 	if (priv->blame_overloaded)
 		args.flags |= JG2_CTX_FLAG_BLAME_OVERLOADED;
+
+	if (priv->force_nocache)
+		args.flags |= JG2_CTX_FLAG_FORCE_NOCACHE;
 
 	p = start;
 
@@ -515,6 +519,26 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 				      sizeof(priv->inm),
 				      WSI_TOKEN_HTTP_IF_NONE_MATCH) < 0)
 			priv->inm[0] = '\0';
+
+		if (lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_CACHE_CONTROL)) {
+			char cc[64];
+			if (lws_hdr_copy(wsi, cc, sizeof(cc), WSI_TOKEN_HTTP_CACHE_CONTROL) >= 0) {
+				if (strstr(cc, "no-cache")) {
+					priv->force_nocache = 1;
+					priv->inm[0] = '\0';
+				}
+			}
+		}
+
+		if (!priv->force_nocache && lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_PRAGMA)) {
+			char pr[64];
+			if (lws_hdr_copy(wsi, pr, sizeof(pr), WSI_TOKEN_HTTP_PRAGMA) >= 0) {
+				if (strstr(pr, "no-cache")) {
+					priv->force_nocache = 1;
+					priv->inm[0] = '\0';
+				}
+			}
+		}
 
 		/*
 		 * that's all the info we need... queue the task to do the

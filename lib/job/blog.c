@@ -96,9 +96,9 @@ treewalk_cb_blog(const char *root, const git_tree_entry *entry, void *payload)
 	}
 
 	if (type == GIT_OBJ_BLOB) {
-		if (rlen == 11 && nlen > 3) {
-			/* Inside YYYY/MM/DD/, check for .md */
-			if (!strcmp(name + nlen - 3, ".md")) {
+		if ((rlen == 11 || rlen == 8 || rlen == 5) && nlen > 3) {
+			/* Inside YYYY/MM/DD/, YYYY/MM/ or YYYY/, check for .md or .mkd */
+			if (!strcmp(name + nlen - 3, ".md") || (nlen > 4 && !strcmp(name + nlen - 4, ".mkd"))) {
 				size_t m = rlen + nlen + 1;
 				tei = lwsac_use(&ctx->lwsac_head, sizeof(*tei) + m, 0);
 				if (!tei) {
@@ -209,10 +209,10 @@ job_blog(struct jg2_ctx *ctx)
 {
 	git_blob *blob;
 	char title[256];
-	char summary[512];
+	char summary[1024];
 	char image_route[256];
 	char pure_title[512];
-	char pure_summary[1024];
+	char pure_summary[2048];
 	char pure_image[512];
 
 	if (ctx->destroying) {
@@ -220,10 +220,13 @@ job_blog(struct jg2_ctx *ctx)
 		return 0;
 	}
 
-	if (!ctx->partway && job_blog_start(ctx)) {
-		lwsl_err("%s: job_blog_start failed\n", __func__);
-		meta_trailer(ctx, "\n]");
-		return -1;
+	if (!ctx->partway) {
+		if (job_blog_start(ctx)) {
+			lwsl_err("%s: job_blog_start failed\n", __func__);
+			meta_trailer(ctx, "\n]");
+			return -1;
+		}
+		ctx->partway = 1;
 	}
 
 	lwsl_notice("%s: entering loop, ctx->tei=%p\n", __func__, ctx->tei);
@@ -255,43 +258,76 @@ job_blog(struct jg2_ctx *ctx)
 		const char *p = content;
 		const char *end = content + scan_size;
 		
+		size_t summary_len = 0;
+		int seen_non_header = 0;
+		int capturing_summary = 0;
+
 		/* extract title, summary, image */
 		while (p < end) {
-				const char *eol = memchr(p, '\n', end - p);
-				if (!eol) eol = end;
-				size_t len = eol - p;
+			const char *eol = memchr(p, '\n', end - p);
+			if (!eol) eol = end;
+			size_t len = eol - p;
 
-				if (len >= 2 && p[0] == '#' && p[1] == ' ' && !title[0]) {
-					size_t tlen = len - 2 < sizeof(title) - 1 ? len - 2 : sizeof(title) - 1;
-					memcpy(title, p + 2, tlen);
-					title[tlen] = '\0';
-				} else if (len > 0 && !summary[0] && p[0] != '#' && p[0] != '!' && p[0] != '<' && p[0] != '[' && p[0] != ' ') {
-					size_t slen = len < sizeof(summary) - 1 ? len : sizeof(summary) - 1;
-					memcpy(summary, p, slen);
-					summary[slen] = '\0';
-				}
-				
-				/* scan for ![alt](image) */
-				if (!image_route[0]) {
-					const char *img = memchr(p, '!', len);
-					if (img && img + 3 < eol && img[1] == '[') {
-						const char *close_bracket = memchr(img, ']', len - (img - p));
-						if (close_bracket && close_bracket[1] == '(') {
-							const char *close_paren = memchr(close_bracket + 2, ')', eol - close_bracket - 2);
-							if (close_paren) {
-								size_t ilen = close_paren - (close_bracket + 2);
-								if (ilen < sizeof(image_route) - 1) {
-									memcpy(image_route, close_bracket + 2, ilen);
-									image_route[ilen] = '\0';
-								}
+			if (len >= 2 && p[0] == '#' && p[1] == ' ' && !title[0]) {
+				size_t tlen = len - 2 < sizeof(title) - 1 ? len - 2 : sizeof(title) - 1;
+				memcpy(title, p + 2, tlen);
+				title[tlen] = '\0';
+			}
+
+			/* scan for ![alt](image) */
+			if (!image_route[0]) {
+				const char *img = memchr(p, '!', len);
+				if (img && img + 3 < eol && img[1] == '[') {
+					const char *close_bracket = memchr(img, ']', len - (img - p));
+					if (close_bracket && close_bracket[1] == '(') {
+						const char *close_paren = memchr(close_bracket + 2, ')', eol - close_bracket - 2);
+						if (close_paren) {
+							size_t ilen = close_paren - (close_bracket + 2);
+							if (ilen < sizeof(image_route) - 1) {
+								memcpy(image_route, close_bracket + 2, ilen);
+								image_route[ilen] = '\0';
 							}
 						}
 					}
 				}
-				
-				p = eol;
-				if (p < end && *p == '\n') p++;
 			}
+
+			/* Summary Extraction */
+			if (!capturing_summary) {
+				/* Skip metadata lines starting with % and empty lines */
+				if (len > 0 && p[0] != '%' && p[0] != '\r') {
+					capturing_summary = 1;
+				}
+			}
+
+			if (capturing_summary) {
+				if (seen_non_header && (len == 0 || p[0] == '\r')) {
+					/* Reached the end of the first paragraph after headers */
+					/* We set capturing_summary = 2 to mean "done" so we don't restart */
+					capturing_summary = 2;
+				} else if (capturing_summary == 1 && summary_len < sizeof(summary) - 2) {
+					size_t copy_len = len;
+					if (summary_len + copy_len >= sizeof(summary) - 1)
+						copy_len = sizeof(summary) - 1 - summary_len;
+					
+					if (summary_len > 0)
+						summary[summary_len++] = '\n';
+					
+					memcpy(summary + summary_len, p, copy_len);
+					summary_len += copy_len;
+					summary[summary_len] = '\0';
+
+					if (len > 0 && p[0] != '#' &&
+					    !(len >= 2 && p[0] == '!' && p[1] == '[') &&
+					    !(len >= 4 && !strncmp(p, "<img", 4))) {
+						seen_non_header = 1;
+					}
+				}
+			}
+
+			p = eol;
+			if (p < end && *p == '\n') p++;
+		}
 			git_blob_free(blob);
 
 		if (!title[0]) { /* fallback to path base name */
@@ -322,6 +358,7 @@ job_blog(struct jg2_ctx *ctx)
 		lwsl_notice("%s: completed iterating all blog items\n", __func__);
 		meta_trailer(ctx, "\n]");
 		job_blog_destroy(ctx);
+		ctx->meta_last_job = 1;
 	} else {
 		lwsl_notice("%s: returning 0 but leaving ctx->tei != NULL\n", __func__);
 	}

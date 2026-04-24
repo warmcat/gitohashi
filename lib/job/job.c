@@ -362,6 +362,15 @@ jg2_ctx_set_job(struct jg2_ctx *ctx, jg2_job_enum job, const char *hex_oid,
 				sizeof(ctx->cache) - 1,
 				&ctx->existing_cache_size);
 
+	if (ctx->job_cache_query == LWS_DISKCACHE_QUERY_EXISTS &&
+	    (ctx->flags & JG2_CTX_FLAG_FORCE_NOCACHE)) {
+		unlink(ctx->cache);
+		close(ctx->fd_cache);
+		ctx->fd_cache = -1;
+		ctx->job_cache_query = LWS_DISKCACHE_QUERY_NO_CACHE;
+		lwsl_notice("%s: forced refresh, deleting cache %s\n", __func__, ctx->cache);
+	}
+
 	if (ctx->job_cache_query == LWS_DISKCACHE_QUERY_EXISTS) {
 		ctx->job = job_spool_from_cache;
 		if (!ctx->sr.e[JG2_PE_MODE] || !jg2_job_naked(ctx)) {

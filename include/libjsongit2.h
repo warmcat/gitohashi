@@ -112,6 +112,7 @@ struct jg2_ctx_create_args {
 #define JG2_CTX_FLAG_HTML 1
 #define JG2_CTX_FLAG_BOT 2
 #define JG2_CTX_FLAG_BLAME_OVERLOADED 4
+#define JG2_CTX_FLAG_FORCE_NOCACHE 8
 	int flags; /**< bitwise-ORed flags: JG2_CTX_FLAG_HTML = generate HTML
 			around the JSON, using the vhost HTML file;
 			absent = pure JSON, JG2_CTX_FLAG_BOT = don't create
