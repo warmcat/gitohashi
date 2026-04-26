@@ -116,6 +116,7 @@ job_tree_start(struct jg2_ctx *ctx)
 	git_generic_ptr u;
 	const char *epath = ctx->sr.e[JG2_PE_PATH];
 	char pure[256], entry_did_inline = ctx->did_inline;
+	char fallback_path[256];
 	git_commit *c;
 	git_oid oid;
 	int e;
@@ -173,7 +174,36 @@ job_tree_start(struct jg2_ctx *ctx)
 	}
 
 	if (epath && epath[0]) {
-		if (git_tree_entry_bypath(&te, u.tree, epath)) {
+		int failed = git_tree_entry_bypath(&te, u.tree, epath);
+
+		if (failed && ctx->blog_mode) {
+			const char *exts[] = { ".md", ".mkd", ".html" };
+			size_t len = strlen(epath);
+			int i;
+
+			if ((len > 5 && !strcmp(epath + len - 5, ".html")) ||
+			    (len > 4 && !strcmp(epath + len - 4, ".mkd")) ||
+			    (len > 3 && !strcmp(epath + len - 3, ".md"))) {
+				
+				char *dot = strrchr(epath, '.');
+				if (dot && (size_t)(dot - epath) < sizeof(fallback_path) - 6) {
+					char base[256];
+					strncpy(base, epath, dot - epath);
+					base[dot - epath] = '\0';
+					
+					for (i = 0; i < 3; i++) {
+						lws_snprintf(fallback_path, sizeof(fallback_path), "%s%s", base, exts[i]);
+						if (!git_tree_entry_bypath(&te, u.tree, fallback_path)) {
+							epath = fallback_path;
+							failed = 0;
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		if (failed) {
 			lwsl_info("%s: git_tree_entry_bypath %s failed\n",
 				  __func__, epath);
 			lws_snprintf(ctx->status, sizeof(ctx->status),

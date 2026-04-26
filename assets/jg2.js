@@ -1355,17 +1355,23 @@ function html_tree(j, now)
 	
 	if (j.items[bi] && j.items[bi].blob) {
 		
-		if ((rpath && rpath.substr(rpath.length - 3) === '.md') ||
-			(rpath && rpath.substr(rpath.length - 4) === '.mkd') ||
+		var bname = j.items[bi].blobname || rpath;
+		if ((bname && bname.substr(bname.length - 3) === '.md') ||
+			(bname && bname.substr(bname.length - 4) === '.mkd') ||
 			bi) {
 			
-			if (!blog_mode)
-			s += "<div class='inline'><div class='inline-title'>" +
-			san(j.items[bi].blobname) +
-			     "</div>";
-			s += "<table><tr>"+
-			"<td class='doc' id='do-showdown'>" + san_nq(j.items[bi].blob) +
-			"</td></tr></table></div>";
+			if (!blog_mode) {
+				s += "<div class='inline'><div class='inline-title'>" +
+				san(j.items[bi].blobname) +
+				     "</div>";
+				s += "<table><tr>"+
+				"<td class='doc' id='do-showdown'>" + san_nq(j.items[bi].blob) +
+				"</td></tr></table></div>";
+			} else {
+				s += "<div class='blog-article-content' id='do-showdown'>" + 
+				     san_nq(j.items[bi].blob) + 
+				     "</div>";
+			}
 		} else {
 			var optclass = "";
 			
@@ -1462,6 +1468,7 @@ function html_bloglist(now)
 		conv = new showdown.Converter({extensions: ['sd_ext_plain']});
 		conv.setOption('tables', '1');
 		conv.setFlavor('github');
+		conv.setOption('simpleLineBreaks', false);
 	}
 
 	s += "<div class='jg2-bloglist'>";
@@ -1536,11 +1543,6 @@ var sd_ext_plain = function () {
     regex: /<img src=\"(?!http:\/\/|https:\/\/|\/)([^\"]*)/g,
     replace: function(match, p1) { return '<img src="' + makeurl(reponame, "plain", doc_dir + p1, qbranch, qid, qofs); }
   };
-  var ext3 = {
-    type: 'output',
-    regex: /<img src=\"\/([^\"]*)/g,
-    replace: function(match, p1) { return '<img src="' + makeurl(reponame, "plain", p1, qbranch, qid, qofs); }
-  };
   var ext4 = {
     type: 'output',
     regex: /<a href=\"\.\/([^\"]*)/g,
@@ -1552,7 +1554,7 @@ var sd_ext_plain = function () {
     replace: function(match, p1) { return '<a class="blogextlink" href="https://' + p1; }
   };
   
-  return [ext3, ext1, ext2, ext4, ext5];
+  return [ext1, ext2, ext4, ext5];
 };
 
 var last_mm, blametable, blamesel, blameotron;
@@ -2272,6 +2274,7 @@ function display(j)
 
 		conv.setOption('tables', '1');
 		conv.setFlavor('github');
+		conv.setOption('simpleLineBreaks', false);
 
 		if (bf && hh)
 			hh.innerHTML = hdhtml + conv.makeHtml(hh.textContent.substr(hdl)) + hdhtmle;

@@ -163,12 +163,65 @@ a.blog-post-link:hover div.blog-post-summary {
 	background-color: rgba(230, 230, 230, 0.6);
 }
 
+div.jg2-bloglist {
+	max-width: 780px;
+	margin: 20px auto;
+	padding: 10px;
+}
+
+div.jg2-bloglist p, 
+div.jg2-bloglist div.blogsummary {
+	font-family: "Georgia", "Times New Roman", serif;
+	font-size: 24px;
+	line-height: 1.6;
+	text-align: justify;
+}
+
 div.warning-banner {
 	background-color: #f8d7da;
 	color: #721c24;
 	padding: 10px;
 	border: 1px solid #f5c6cb;
 	margin-bottom: 15px;
+}
+
+div.blog-article-content {
+	max-width: 780px;
+	margin: 0 auto;
+	padding: 20px;
+	font-family: "Georgia", "Times New Roman", serif;
+	font-size: 24px;
+	line-height: 1.6;
+	color: #333;
+	text-align: justify;
+}
+
+div.blog-article-content p {
+	font-family: inherit;
+	font-size: inherit;
+	line-height: inherit;
+	text-align: justify;
+}
+
+table.repobar {
+	width: 100%;
+}
+
+div.blog-article-content h1, 
+div.blog-article-content h2, 
+div.blog-article-content h3 {
+	font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+	color: #111;
+	margin-top: 1.5em;
+	margin-bottom: 0.5em;
+}
+
+div.blog-article-content img {
+	max-width: 100%;
+	height: auto;
+	display: block;
+	margin: 20px auto;
+	border-radius: 4px;
 }
 
 div.jg2-tree {
