@@ -190,6 +190,19 @@ jg2_ctx_get_path(const struct jg2_ctx *ctx, jg2_path_element type,
 			return buf;
 		}
 
+		if (ctx->jrepo && ctx->jrepo->repo) {
+			git_reference *head;
+			if (!git_repository_head(&head, ctx->jrepo->repo)) {
+				const char *name = git_reference_name(head);
+				if (name)
+					lws_snprintf(buf, buflen, "%s", name);
+				else
+					lws_snprintf(buf, buflen, "refs/heads/master");
+				git_reference_free(head);
+				return buf;
+			}
+		}
+
 		return "refs/heads/master";
 	}
 

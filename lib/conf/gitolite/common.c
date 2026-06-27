@@ -108,9 +108,20 @@ __jg2_conf_gitolite_admin_head(struct jg2_ctx *ctx)
 		goto bail;
 	}
 
-	m = git_reference_name_to_id(&oid, repo, "refs/heads/master");
+	{
+		git_reference *head;
+		m = git_repository_head(&head, repo);
+		if (m == 0) {
+			const git_oid *toid = git_reference_target(head);
+			if (toid)
+				git_oid_cpy(&oid, toid);
+			else
+				m = -1;
+			git_reference_free(head);
+		}
+	}
 	if (m < 0) {
-		lwsl_err("%s: unable to find master ref: %d\n", __func__, m);
+		lwsl_err("%s: unable to find HEAD ref: %d\n", __func__, m);
 		goto bail1;
 	}
 

@@ -988,7 +988,7 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 		switch (ctx->job_state) {
 		case EMIT_STATE_SUMMARY:
 			ctx->job_state = EMIT_STATE_SUMMARY_LOG;
-			jg2_ctx_set_job(ctx, JG2_JOB_LOG, "refs/heads/master",
+			jg2_ctx_set_job(ctx, JG2_JOB_LOG, vid,
 					10, JG2_JOB_FLAG_CHAINED |
 					    JG2_JOB_FLAG_FINAL);
 			break;
