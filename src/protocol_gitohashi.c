@@ -350,6 +350,7 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 	struct pss_gitohashi *pss = (struct pss_gitohashi *)user;
 	struct lws_threadpool_create_args cargs;
 	struct lws_threadpool_task_args targs;
+	struct lws_threadpool_task *task;
 	struct task_data_gitohashi *priv;
 	struct jg2_vhost_config config;
 	const char *csize, *flags, *z;
@@ -653,7 +654,20 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 		if (!pss)
 			break;
 
-		n = lws_threadpool_task_status(lws_threadpool_get_task_wsi(wsi), &_user);
+		/*
+		 * lws_threadpool_get_task_wsi() returns NULL once the task
+		 * bound to this wsi has been reaped/disassociated (e.g. it
+		 * was dequeued by HTTP_DROP_PROTOCOL, or core close ran
+		 * lws_threadpool_wsi_closing()).  lws_threadpool_task_status()
+		 * dereferences the task pointer, so we must not pass it NULL.
+		 * The canonical minimal threadpool example guards this the
+		 * same way.
+		 */
+		task = lws_threadpool_get_task_wsi(wsi);
+		if (!task)
+			return 0;
+
+		n = lws_threadpool_task_status(task, &_user);
 		lwsl_info("%s: LWS_CALLBACK_SERVER_WRITEABLE: %p: "
 			   "priv %p, status %d\n", __func__, wsi, _user, n);
 		switch(n) {
