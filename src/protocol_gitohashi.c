@@ -568,13 +568,53 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 			return -1;
 		}
 
-		if (strstr(priv->url, "/blame")) {
+		/*
+		 * Blame is expensive (a full git_blame_file plus per-hunk
+		 * commit lookups) and every buffer it produces needs a
+		 * serialized round-trip through the single lws service thread
+		 * via LWS_TP_RETURN_SYNC.  Under a crawl, blame requests pile
+		 * up faster than they drain: every worker ends up parked in
+		 * the sync wait, the queue fills, and the pool deadlocks.
+		 *
+		 * When the pool is already busy with blame-class work, shed
+		 * the new request with 503 instead of admitting it onto the
+		 * same jammed pool.  Shedding only happens when there is no
+		 * free worker and no queue headroom left, so a pool that can
+		 * still make progress keeps admitting requests.
+		 */
+
+		if (vhd->tp && strstr(priv->url, "/blame")) {
 			int ongoing, possible, queue_depth;
 
-			lws_threadpool_diagnose(vhd->tp, &ongoing, &possible, &queue_depth);
+			lws_threadpool_diagnose(vhd->tp, &ongoing,
+						&possible, &queue_depth);
 
+			/* park the flag so the page can render a notice if
+			 * we do admit a request that later sees contention */
 			if (ongoing >= 1 || queue_depth)
 				priv->blame_overloaded = 1;
+
+			/*
+			 * no free worker AND no queue slot left... the pool
+			 * cannot accept another long blame without joining
+			 * the deadlock.  Reject this one immediately.
+			 */
+			if (ongoing >= possible) {
+				lwsl_notice("%s: blame shed: ongoing %d/%d, "
+					    "q %d\n", __func__, ongoing,
+					    possible, queue_depth);
+
+				lws_return_http_status(wsi,
+					HTTP_STATUS_SERVICE_UNAVAILABLE,
+					"503 Blame pool busy");
+
+				cleanup_task_private_data(wsi, priv);
+
+				if (lws_http_transaction_completed(wsi))
+					return -1;
+
+				return 0;
+			}
 		}
 
 		if (!lws_threadpool_enqueue(vhd->tp, &targs, "goh-%s",
