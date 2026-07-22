@@ -214,6 +214,7 @@ job_blog(struct jg2_ctx *ctx)
 	char pure_title[512];
 	char pure_summary[2048];
 	char pure_image[512];
+	char pure_path[512];
 
 	if (ctx->destroying) {
 		job_blog_destroy(ctx);
@@ -279,12 +280,26 @@ job_blog(struct jg2_ctx *ctx)
 				const char *img = memchr(p, '!', len);
 				if (img && img + 3 < eol && img[1] == '[') {
 					const char *close_bracket = memchr(img, ']', len - (img - p));
+						/*
+						 * close_bracket (if found) lies in
+						 * [img, p+len).  Bound the search
+						 * for ')' by the number of bytes
+						 * remaining in the line *after*
+						 * close_bracket+2, clamped to >= 0,
+						 * so memchr can't run off the end
+						 * of the line into adjacent heap.
+						 */
+
 					if (close_bracket && close_bracket[1] == '(') {
-						const char *close_paren = memchr(close_bracket + 2, ')', eol - close_bracket - 2);
+						const char *cb2 = close_bracket + 2;
+						size_t remain = (p + len) > cb2 ?
+							(size_t)((p + len) - cb2) : 0;
+						const char *close_paren = memchr(cb2, ')', remain);
+
 						if (close_paren) {
-							size_t ilen = close_paren - (close_bracket + 2);
-							if (ilen < sizeof(image_route) - 1) {
-								memcpy(image_route, close_bracket + 2, ilen);
+							size_t ilen = close_paren - cb2;
+ 							if (ilen < sizeof(image_route) - 1) {
+								memcpy(image_route, cb2, ilen);
 								image_route[ilen] = '\0';
 							}
 						}
@@ -341,10 +356,11 @@ job_blog(struct jg2_ctx *ctx)
 		jg2_json_purify(pure_title, title, sizeof(pure_title), NULL);
 		jg2_json_purify(pure_summary, summary, sizeof(pure_summary), NULL);
 		jg2_json_purify(pure_image, image_route, sizeof(pure_image), NULL);
+		jg2_json_purify(pure_path, path, sizeof(pure_path), NULL);
 
 		lwsl_notice("%s: Appending JSON chunk for %s\n", __func__, path);
 		CTX_BUF_APPEND("%c\n{ \"name\": \"%s\",",
-			       ctx->subsequent ? ',' : ' ', path);
+			       ctx->subsequent ? ',' : ' ', pure_path);
 		ctx->subsequent = 1;
 		CTX_BUF_APPEND("\"title\": \"%s\",", pure_title);
 		CTX_BUF_APPEND("\"summary\": \"%s\",", pure_summary);

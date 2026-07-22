@@ -34,6 +34,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <pwd.h>
+#include <grp.h>
 #include <errno.h>
 
 #include <sys/stat.h>
@@ -178,7 +179,7 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
 		jg2_gitolite3_blocking_query(jg2_global, "query-rc UMASK", NULL,
 					     GL3_VERSION_PROBE);
 
-		n = open(GL3_VERSION_PROBE, O_RDONLY);
+		n = open(GL3_VERSION_PROBE, O_RDONLY | O_NOFOLLOW);
 		if (n < 0) { /* outcome a */
 			lwsl_notice("%s: no gitolite utility: v2\n", __func__);
 			jg2_global->gitolite_version = 2;
@@ -219,10 +220,22 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
 
 	/* forked child takes on uid + gid from repo dir */
 
-	if (setgid(s.st_gid))
-		lwsl_err("setgid: %s\n", strerror(errno));
-	if (setuid(s.st_uid))
-		lwsl_err("setuid: %s\n", strerror(errno));
+	/*
+	 * We were forked while the parent was still privileged, so dropping
+	 * privileges here is mandatory.  Drop supplementary groups first
+	 * (otherwise we keep the parent's group memberships even after a
+	 * successful setuid), and make any failure fatal -- otherwise we
+	 * would continue to run as root and every subsequent execvp() and
+	 * file open in this child would happen with full privileges.
+	 */
+
+	if (setgroups(0, NULL))
+		lwsl_err("setgroups: %s\n", strerror(errno));
+	if (setgid(s.st_gid) || setuid(s.st_uid)) {
+		lwsl_err("%s: privilege drop failed: %s\n", __func__,
+				strerror(errno));
+		exit(1);
+	}
 
 	/*
 	 * we block until we get an atomic struct asking us to do something
@@ -265,9 +278,16 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
 		for (n = 0; n < (int)m; n++)
 			lwsl_debug("  %d: %s\n", n, args[n]);
 
-		/* we got a request... open the output file */
-
-		fd = open(q.stdout_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+		/*
+		 * we got a request... open the output file.
+		 *
+		 * O_NOFOLLOW: if an attacker planted a symlink at this path,
+		 * refuse it rather than truncating its target.  The path is
+		 * only ever one of our own /tmp names (see
+		 * jg2_gitolite3_blocking_query) or a cache path we computed.
+		 */
+		fd = open(q.stdout_path, O_CREAT | O_WRONLY | O_TRUNC |
+				       O_NOFOLLOW, 0644);
 		if (fd < 0) {
 			lwsl_err("%s: unable to open stdout fd\n", __func__);
 
@@ -283,7 +303,7 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
 
 		fdsi = -1;
 		if (q.stdin_path[0])
-			fdsi = open(q.stdin_path, O_RDONLY);
+			fdsi = open(q.stdin_path, O_RDONLY | O_NOFOLLOW);
 
 		/* create the fork for the query */
 
@@ -409,10 +429,21 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
 	 * (usually) permissions.  So we ask the fork to create the result in a
 	 * temp file, and copy it in to the final cache file here in
 	 * libjsongit2.
+	 *
+	 * Use mkstemp() to get an unpredictable, O_EXCL-created temp file so
+	 * an attacker cannot pre-plant a symlink at a guessable /tmp name and
+	 * have us truncate its target.
 	 */
 
-	lws_snprintf(temp, sizeof(temp), "/tmp/_gl3q_%d", getpid());
-	unlink(temp);
+	lws_snprintf(temp, sizeof(temp), "/tmp/_gl3qXXXXXX");
+	fd = mkstemp(temp);
+	if (fd < 0) {
+		lwsl_err("%s: mkstemp failed: %s\n", __func__, strerror(errno));
+		ret = -4;
+		goto bail;
+	}
+	unlink(temp); /* unlink now; child re-creates it by path with O_NOFOLLOW */
+
 	strncpy(q.stdout_path, temp, sizeof(q.stdout_path) - 1);
 	q.stdout_path[sizeof(q.stdout_path) - 1] = '\0';
 
@@ -429,6 +460,7 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
 
 	if (write(jg2_global->gl3_pipe[1], &q, sizeof(q)) != sizeof(q)) {
 		lwsl_err("%s: control pipe write failed\n", __func__);
+		close(fd);
 		ret = -2;
 		goto bail;
 	}
@@ -436,19 +468,27 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
 	/* synchronize with the running process */
 
 	if (read(jg2_global->gl3_pipe_result[0], &res, sizeof(res)) !=
-						       sizeof(res)) {
+							       sizeof(res)) {
 		lwsl_err("%s: return pipe read failed\n", __func__);
+		close(fd);
 		ret = -3;
 		goto bail;
 	}
 
 	/*
 	 * if the GL3_TEMP version was created (with gitolite3 permissions),
-	 * copy it into the actual output file (with gitohashi permissions)
+	 * copy it into the actual output file (with gitohashi permissions).
+	 *
+	 * The child wrote to q.stdout_path (== temp), recreating it by path
+	 * with O_CREAT|O_TRUNC|O_NOFOLLOW.  Reopen that path here the same
+	 * way to read the result; O_NOFOLLOW refuses any symlink planted in
+	 * the window since mkstemp unlinked the name.
 	 */
-	fd = open(temp, O_RDONLY);
+	close(fd);
+	fd = open(temp, O_RDONLY | O_NOFOLLOW);
 	if (fd >= 0) {
-		fd1 = open(output, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+		fd1 = open(output, O_CREAT | O_WRONLY | O_TRUNC |
+				    O_NOFOLLOW, 0600);
 		if (fd1 >= 0) {
 			do {
 				n = read(fd, buf, sizeof(buf));
@@ -512,6 +552,12 @@ __jg2_gitolite3_get_repodir_acls(struct jg2_ctx *ctx, const char *auth)
 		 */
 		lws_snprintf(cache, sizeof(cache) - 1,
 			     "/tmp/gitohashi-gl3-query-%d", getpid());
+		/*
+		 * The child opens this with O_NOFOLLOW (we added it in the
+		 * child loop), so a pre-planted symlink is refused.  Unlink
+		 * any pre-existing entry here first as defense-in-depth.
+		 */
+		unlink(cache);
 	} else
 		close(fd); /* we will reopen it in the forked process */
 
@@ -593,8 +639,10 @@ judge:
 			m++;
 
 			si[pos] = '\0';
-			lwsl_notice("%s: %s '%s'\n", __func__, si, si + pos - 7);
-			if (!strcmp(si + pos - 7, "refs/.*")) {
+			if (pos >= 7) {
+				lwsl_notice("%s: %s '%s'\n", __func__, si,
+					    si + pos - 7);
+				if (!strcmp(si + pos - 7, "refs/.*")) {
 				struct repo_entry_info *rei;
 
 				/*
@@ -625,6 +673,7 @@ judge:
 				a3->next = rei->acls_valid_head;
 				rei->acls_valid_head = a3;
 			}
+				} /* end if (pos >= 7) */
 
 			pos = 0;
 			continue;

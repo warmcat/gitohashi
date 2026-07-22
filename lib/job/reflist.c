@@ -59,7 +59,7 @@ job_reflist(struct jg2_ctx *ctx)
 
 	while (JG2_HAS_SPACE(ctx, 768)) {
 		char pure[128];
-		git_reference *gref, *rref;
+		git_reference *gref, *rref = NULL;
 		const git_oid *oid;
 
 		/*
@@ -73,7 +73,21 @@ job_reflist(struct jg2_ctx *ctx)
 			break;
 		}
 
-		git_reference_resolve(&rref, gref);
+		/*
+		 * git_reference_resolve() returns the peeled (target) ref for
+		 * symbolic refs.  It can fail (e.g. dangling symbolic ref),
+		 * leaving rref untouched -- so it must start as NULL and we
+		 * must check the return value before relying on it.  Otherwise
+		 * git_reference_target() dereferences and git_reference_free()
+		 * frees an uninitialized stack pointer.
+		 */
+
+		if (git_reference_resolve(&rref, gref) < 0 || !rref) {
+			lwsl_notice("%s: unable to resolve ref\n", __func__);
+			git_reference_free(gref);
+			continue;
+		}
+
 		oid = git_reference_target(rref);
 		if (oid) {
 			jg2_json_purify(pure, git_reference_name(gref),

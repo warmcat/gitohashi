@@ -295,7 +295,12 @@ job_tree_start(struct jg2_ctx *ctx)
 			sizeof(pure) - 1);
 		pure[sizeof(pure) - 1] = '\0';
 
-		if (strlen(pure) > 1)
+		/*
+		 * Only append the trailing '/' if there is room for it and its
+		 * NUL terminator.  Otherwise strlen(pure) == sizeof(pure)-1 and
+		 * strcat would write the NUL one byte past pure[].
+		 */
+		if (strlen(pure) > 1 && strlen(pure) < sizeof(pure) - 2)
 			strcat(pure, "/");
 
 		ellipsis_purify(pure + strlen(pure), ctx->sr.e[JG2_PE_NAME],

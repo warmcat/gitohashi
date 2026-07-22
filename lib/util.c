@@ -31,6 +31,17 @@
 
 static const char *hex = "0123456789abcdef";
 
+void
+jg2_md5_upd_lenprefixed(struct jg2_vhost *vh, jg2_md5_context _ctx,
+			const void *input, size_t ilen)
+{
+	uint32_t lp = (uint32_t)ilen;
+
+	vh->cfg.md5_upd(_ctx, (unsigned char *)&lp, sizeof(lp));
+	if (ilen)
+		vh->cfg.md5_upd(_ctx, (const unsigned char *)input, ilen);
+}
+
 /*
  * repo_path should look like
  *
@@ -79,20 +90,55 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 			goto bail;
 		}
 
+	/*
+	 * Defense-in-depth: also reject ".." in the inside-repo path.  libgit2
+	 * treats ".." as a literal entry name (so it is not currently
+	 * exploitable for traversal via git_tree_entry_bypath/git_blame_file),
+	 * but rejecting it here keeps the NAME and PATH handling consistent and
+	 * removes any reliance on libgit2's interpretation staying this way.
+	 */
+
+	if (sr->e[JG2_PE_PATH]) {
+		char *pp = (char *)sr->e[JG2_PE_PATH];
+
+		while ((pp = strchr(pp, '.')))
+			if (*(++pp) == '.') {
+				lwsl_err("%s: illegal .. in repo path\n",
+					 __func__);
+
+				goto bail;
+			}
+	}
+
+	/*
+	 * Parse up to 4 query parameters.  Each iteration finds the next '?'
+	 * (first param) or '&' separator, then the '=' inside "key=value".
+	 * The key name spans [key_start, p) and we match it by exact length
+	 * and content, rather than by the single character before '=' (the
+	 * old code matched any key ending in the right letter, so "xq=..."
+	 * was treated as the "q" search parameter).
+	 */
+
 	for (n = 0; n < 4; n++) {
-		char *pp;
+		char *pp, *key_start, *eq;
+		size_t klen;
 
-		p = strchr(p, !n ? '?' : '&');
-		if (!p)
+		eq = strchr(p, !n ? '?' : '&');
+		if (!eq)
 			return 0;
 
-		*p++ = '\0';
+		*eq++ = '\0';
+		key_start = eq;
 
-		p = strchr(p, '=');
-		if (!p)
+		eq = strchr(key_start, '=');
+		if (!eq)
 			return 0;
 
-		if (p[-1] == 'h') {
+		/* key is [key_start, eq), value starts at eq + 1 */
+		klen = (size_t)(eq - key_start);
+		p = eq; /* p points at '=' for compatibility with below */
+
+		if (klen == 1 && key_start[0] == 'h') {
 			pp = strdup(p + 1);
 			sr->e[JG2_PE_BRANCH] = (const char *)pp;
 			while (*pp) {
@@ -105,7 +151,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 			// lwsl_err("%s: branch seen as %s\n", __func__, sr->e[JG2_PE_BRANCH]);
 
 		}
-		if (p[-1] == 'd') {/* id hex hash string*/
+		if (klen == 1 && key_start[0] == 'd') {/* id hex hash string*/
 			pp = strdup(p + 1);
 			sr->e[JG2_PE_ID] = (const char *)pp;
 
@@ -117,10 +163,10 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 				pp++;
 			}
 		}
-		if (p[-1] == 's') { /* ofs */
+		if (klen == 1 && key_start[0] == 's') { /* ofs */
 			sr->offset = atoi(p + 1);
 		}
-		if (p[-1] == 'q') {
+		if (klen == 1 && key_start[0] == 'q') {
 			pp =  strdup(p + 1);
 			sr->e[JG2_PE_SEARCH] = (const char *)pp;
 			while (*pp) {
@@ -132,7 +178,8 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 				pp++;
 			}
 		}
-		p++;
+		/* advance p past the value for the next separator search */
+		p = p + 1;
 	}
 
 	return 0;
@@ -476,11 +523,22 @@ void
 signature_text(const git_signature *sig, struct jg2_ctx *ctx)
 {
 	struct tm tm, *tmr;
-	char dt[96];
+	char dt[96], n[128], e[128];
 
 	tmr = localtime_r((const time_t *)&sig->when.time, &tm);
 
-	CTX_BUF_APPEND("Author: %s <%s>\n", sig->name, sig->email);
+	/*
+	 * sig->name and sig->email are attacker-controllable (commit author
+	 * fields).  The non-patch path escapes them via ellipsis_purify() in
+	 * name_email_json(); do the same here so a crafted identity cannot
+	 * inject arbitrary content into the patch output.
+	 */
+
+	CTX_BUF_APPEND("Author: %s <%s>\n",
+		       ellipsis_purify(n, sig->name ? sig->name : "unknown",
+				       sizeof(n)),
+		       ellipsis_purify(e, sig->email ? sig->email : "unknown",
+				       sizeof(e)));
 
 	if (tmr) {
 		/* like Date:   Mon Aug 13 16:49:58 2018 +0800 */

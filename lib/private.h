@@ -54,7 +54,26 @@
 #include <archive_entry.h>
 #endif
 
-#define JG2_JSON_EPOCH 1
+/*
+ * Bumped to 2 when length-prefixing was added to the cache-key hash so that
+ * entries written by older builds (which produced ambiguous keys) are
+ * invalidated rather than served against the new, stricter key.
+ */
+#define JG2_JSON_EPOCH 2
+
+/*
+ * Maximum cache base path length we will accept at vhost creation.
+ *
+ * The on-disk cache filename is built by lws_diskcache_query() as
+ *   <base>/<c>/<c>/<32 hex>~<pid>-<ptr>
+ * The suffix and structure add up to 71 bytes worst case on 64-bit
+ * (1+1+1+1+1+32 for the directory+name, then up to ~34 for "~<pid>-<ptr>").
+ * The cache path buffer in jg2_ctx is sized to accommodate base + this
+ * overhead plus headroom; if the configured base exceeds this limit we reject
+ * it rather than silently truncating the temp suffix (which would orphan the
+ * cache entry under a ~name that finalize_name() then cannot rename).
+ */
+#define JG2_CACHE_BASE_MAX	256
 
 struct jg2_ctx;
 struct jg2_vhost;
@@ -324,7 +343,7 @@ struct jg2_ctx {
 	/* job parameters */
 	const char *acl_user;
 	char hex_oid[64]; /**< may also be a ref like refs/head/master */
-	char cache[128];
+	char cache[384];
 	char alang[128]; /**< accept-language string, or NUL */
 	char status[256];
 	int count;
@@ -357,7 +376,7 @@ struct jg2_ctx {
 	struct ongoing_index *ongoing;
 
 	/* search */
-	char trie_filepath[256];
+	char trie_filepath[512];
 	struct lws_fts_result *result;
 	struct lws_fts_result_autocomplete *ac;
 	struct lws_fts_result_filepath *fp;
@@ -515,6 +534,18 @@ void
 jg2_md5_init(jg2_md5_context _ctx);
 int
 jg2_md5_upd(jg2_md5_context _ctx, const unsigned char *input, size_t ilen);
+
+/*
+ * Hash a variable-length byte string into the vhost md5 context with a
+ * 32-bit little-endian length prefix.  This provides domain separation
+ * between adjacent variable-length fields in the cache key so that, eg,
+ * mode="abc"+path="def" no longer hashes identically to
+ * mode="abcdef"+path="".  Callers passing fixed-width fields (oids, the
+ * epoch/je word, count word, md5_refs) do not need to use this.
+ */
+void
+jg2_md5_upd_lenprefixed(struct jg2_vhost *vh, jg2_md5_context _ctx,
+			const void *input, size_t ilen);
 int
 jg2_md5_fini(jg2_md5_context _ctx, unsigned char output[16]);
 

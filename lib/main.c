@@ -276,6 +276,21 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
 						 config->repo_base_dir);
 	if (config->json_cache_base) {
 
+		/*
+		 * The on-disk cache filename is <base>/<c>/<c>/<hex>~<pid>-<ptr>.
+		 * If the base path is too long, the temp suffix gets truncated,
+		 * finalize_name() then cannot find the '~' to rename away, and
+		 * the cache entry is orphaned (re-built every time).  Reject
+		 * over-long bases up front rather than silently break.
+		 */
+		if (strlen(config->json_cache_base) > JG2_CACHE_BASE_MAX) {
+			lwsl_err("%s: json_cache_base too long (%lu > %d)\n",
+				 __func__,
+				 (unsigned long)strlen(config->json_cache_base),
+				 JG2_CACHE_BASE_MAX);
+			goto bail;
+		}
+
 		if (config->cache_uid)
 			lws_diskcache_prepare(config->json_cache_base, 0700,
 					      config->cache_uid);

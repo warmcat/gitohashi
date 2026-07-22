@@ -97,6 +97,20 @@ __repo_reflist_update(struct jg2_vhost *vh, struct jg2_repo *jrepo)
 
 			oid = git_reference_target(ref);
 
+			/*
+			 * git_reference_target() returns NULL for symbolic refs.
+			 * refs under heads/ can be symbolic, so we must skip
+			 * those rather than dereferencing oid in the calls below
+			 * (which would SIGSEGV the cache-trim thread while it
+			 * holds the repo lock).
+			 */
+			if (!oid) {
+				lwsl_notice("%s: symbolic ref has no oid\n",
+					    __func__);
+				change_seen |= 2;
+				break;
+			}
+
 			if (git_oid_cmp(&er->oid, oid)) {
 				change_seen |= 1; /* existing ref changed oid */
 				/* snip us out of existing hash table */
@@ -158,6 +172,15 @@ __repo_reflist_update(struct jg2_vhost *vh, struct jg2_repo *jrepo)
 			const git_oid *oid;
 
 			oid = git_reference_target(ref);
+
+			/* see the comment in the matching block above */
+			if (!oid) {
+				lwsl_notice("%s: symbolic ref has no oid\n",
+					    __func__);
+				git_reference_free(ref);
+				ref = NULL;
+				continue;
+			}
 
 			er = jg2_zalloc(sizeof(*er));
 			if (!er)

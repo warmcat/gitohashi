@@ -60,6 +60,19 @@ __jg2_cache_query_v(struct jg2_ctx *ctx, int flags, const char *suffix,
 	n = vsnprintf(buf, sizeof(buf) - l - 1, format, ap);
 	va_end(ap);
 
+	/*
+	 * vsnprintf() returns the number of bytes that *would* have been
+	 * written, not the number actually written.  If the formatted string
+	 * was truncated, n can exceed sizeof(buf) - l - 1 and the md5_upd()
+	 * below would read past buf[] on the stack.  Cap it to the bytes that
+	 * are actually in the buffer.
+	 */
+
+	if (n < 0)
+		n = 0;
+	if (n > (int)sizeof(buf) - l - 1)
+		n = (int)sizeof(buf) - l - 1;
+
 	md5_ctx = ctx->vhost->cfg.md5_alloc();
 	if (!md5_ctx)
 		return LWS_DISKCACHE_QUERY_NO_CACHE;

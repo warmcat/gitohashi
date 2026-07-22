@@ -24,15 +24,25 @@
 
 #include <string.h>
 
+/*
+ * Maximum number of bytes of an email (or name) we will hash or scan.
+ * sig->email / sig->name come from git commit objects and are therefore
+ * attacker-controllable (anyone who can push, or any imported history).
+ * Without a cap a single crafted commit with a multi-MB author field can
+ * be made to burn CPU and memory on every render.
+ */
+#define JG2_EMAIL_MAX_LEN 256
+
 static int
 __email_hash(struct jg2_vhost *vh, const char *email)
 {
-	int s = 0;
+	unsigned int s = 0;
+	size_t n = 0;
 
-	while (*email)
-		s += *email++;
+	while (n < JG2_EMAIL_MAX_LEN && email[n])
+		s += (unsigned char)email[n++];
 
-	return s % vh->cfg.email_hash_bins;
+	return (int)(s % (unsigned int)vh->cfg.email_hash_bins);
 }
 
 unsigned char *
@@ -87,24 +97,43 @@ email_md5(struct jg2_vhost *vh, const char *email)
 			pthread_mutex_unlock(&vh->lock); /*----- vhost unlock */
 			return NULL;
 		}
-	} else
-		/* replace the "last" one */
+	} else {
+		/*
+		 * Replace the "last" one (op == tail).  Unlink it from the
+		 * list first so we can safely move it to the front.  The old
+		 * code only unlinked via oop->next and then unconditionally
+		 * did "ne->next = first; first = ne;"; if ne was itself the
+		 * head (eg email_hash_depth == 1, so op == first and oop ==
+		 * NULL), the unlink was skipped and ne->next was set to ne,
+		 * creating a self-cycle that hung every subsequent lookup of
+		 * the bin.  Handle the head case explicitly.
+		 */
 
 		ne = op;
+
+		if (ne == vh->bins[bin].first)
+			/* sole node; just clear the list, ne is reused below */
+			vh->bins[bin].first = NULL;
+		else if (oop)
+			oop->next = op->next; /* op->next is NULL, op is tail */
+	}
 
 	ne->next = NULL;
 	strncpy(ne->email, email, sizeof(ne->email) - 1);
 	ne->email[sizeof(ne->email) - 1] = '\0';
 
-	if (ne == op && oop) /* replacing existing, just move to front */
-		oop->next = op->next; /* should always be NULL */
-
-	/* adding new at front */
+	/* adding new (or newly-recycled) at front */
 	ne->next = vh->bins[bin].first;
 	vh->bins[bin].first = ne;
 
 	vh->cfg.md5_init(vh->md5_ctx);
-	vh->cfg.md5_upd(vh->md5_ctx, (unsigned char *)email, strlen(email));
+	/* cap the hashed length to bound work on attacker-controlled input */
+	{
+		size_t elen = strlen(email);
+		if (elen > JG2_EMAIL_MAX_LEN)
+			elen = JG2_EMAIL_MAX_LEN;
+		vh->cfg.md5_upd(vh->md5_ctx, (unsigned char *)email, elen);
+	}
 	vh->cfg.md5_fini(vh->md5_ctx, ne->md5);
 
 	if (vh->cfg.avatar)

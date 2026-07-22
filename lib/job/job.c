@@ -145,8 +145,7 @@ __jg2_job_hash_visible_repos(struct jg2_ctx *ctx)
 		char *p = (char *)(rei + 1);
 
 		if (!jg2_acl_check(ctx, p, ctx->acl_user))
-			vh->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)p,
-					strlen(p));
+			jg2_md5_upd_lenprefixed(vh, ctx->md5_ctx, p, strlen(p));
 
 		lws_list_ptr_advance(lp);
 	}
@@ -176,8 +175,8 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 		ctx->vhost->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)&c32, 4);
 
 		if (ctx->sr.e[JG2_PE_SEARCH])
-			ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
-				(unsigned char *)ctx->sr.e[JG2_PE_SEARCH],
+			jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
+				ctx->sr.e[JG2_PE_SEARCH],
 				strlen(ctx->sr.e[JG2_PE_SEARCH]));
 	}
 
@@ -189,20 +188,20 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 					   sizeof(ctx->jrepo->md5_refs));
 
 	/* item 4: the repo filepath (if we are affiliated with a repo) */
-		ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
-					(unsigned char *)ctx->jrepo->repo_path,
+		jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
+					ctx->jrepo->repo_path,
 					strlen(ctx->jrepo->repo_path));
 
 	/* item 5: the mode we are looking for results with, if any */
 		if (ctx->sr.e[JG2_PE_MODE])
-			ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
-					(unsigned char *)ctx->sr.e[JG2_PE_MODE],
+			jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
+					ctx->sr.e[JG2_PE_MODE],
 					strlen(ctx->sr.e[JG2_PE_MODE]));
 
 	/* item 6: the path part inside the repo, if any */
 		if (job != JG2_JOB_SEARCH_TRIE && ctx->sr.e[JG2_PE_PATH])
-			ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
-					(unsigned char *)ctx->sr.e[JG2_PE_PATH],
+			jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
+					ctx->sr.e[JG2_PE_PATH],
 					strlen(ctx->sr.e[JG2_PE_PATH]));
 
 	/* item 7: the oid if the job could use it (and we have a repo) */
@@ -217,8 +216,8 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 				char hoid[GIT_OID_HEXSZ + 1];
 
 				oid_to_hex_cstr(hoid, git_blob_id(ctx->u.blob));
-				ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
-					(unsigned char *)hoid, strlen(hoid));
+				jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
+					hoid, strlen(hoid));
 
 				git_object_free(ctx->u.obj);
 				ctx->u.obj = NULL;
@@ -251,9 +250,15 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 					if (!rei->conf_len[n])
 						continue;
 
-					ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
-							(unsigned char *)p,
-							rei->conf_len[n]);
+					/*
+					 * the conf_len[] entries are
+					 * NUL-terminated strings laid out
+					 * contiguously; length-prefix each so
+					 * adjacent fields can't be re-split
+					 */
+					jg2_md5_upd_lenprefixed(ctx->vhost,
+						ctx->md5_ctx, p,
+						rei->conf_len[n]);
 					p += rei->conf_len[n];
 				}
 

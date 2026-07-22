@@ -28,6 +28,40 @@
 
 #define lp_to_rei(p, _n) lws_list_ptr_container(p, struct repo_entry_info, _n)
 
+/*
+ * Whitelist for gitolite identity names.  `auth` arrives from the client
+ * (HTTP-authenticated user / client-cert CN) and is interpolated into both
+ * the gitolite argv ("access % <auth> R") and a cache-key format string.
+ * Rejecting anything outside this set closes (a) argument injection into
+ * the gitolite subprocess via a username containing spaces, and (b) any
+ * attempt to use '/' or '..' to escape the cache-key context.  Returns
+ * nonzero if the name is acceptable.
+ */
+static int
+jg2_auth_name_ok(const char *auth)
+{
+	const char *p;
+
+	if (!auth || !auth[0])
+		return 0;
+
+	for (p = auth; *p; p++) {
+		unsigned char c = (unsigned char)*p;
+		if (c == '@' || c == '-' || c == '_' || c == '.')
+			continue;
+		if (c >= '0' && c <= '9')
+			continue;
+		if (c >= 'A' && c <= 'Z')
+			continue;
+		if (c >= 'a' && c <= 'z')
+			continue;
+
+		return 0;
+	}
+
+	return 1;
+}
+
 /* repodir lock must be held */
 
 struct repo_entry_info *
@@ -59,6 +93,16 @@ jg2_acl_check(struct jg2_ctx *ctx, const char *reponame, const char *auth)
 	if (!reponame || !reponame[0]) {
 		lwsl_err("%s: NULL or empty reponame\n", __func__);
 		return 1; /* disallow */
+	}
+
+	/*
+	 * Validate client-supplied auth name.  If it contains anything outside
+	 * the gitolite identity charset, ignore it for authorization purposes
+	 * rather than passing it to gitolite / the cache key.
+	 */
+	if (auth && !jg2_auth_name_ok(auth)) {
+		lwsl_notice("%s: rejecting invalid auth name\n", __func__);
+		auth = NULL;
 	}
 
 	if (auth && !strcmp(auth, "@all"))

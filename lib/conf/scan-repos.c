@@ -72,7 +72,7 @@ __jg2_conf_scan_repos(struct jg2_repodir *rd)
 
 	lws_snprintf(filepath, sizeof(filepath),
 		     "/tmp/_goh_rl_%s", rd->hexoid_gitolite_conf);
-	fd = open(filepath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	fd = open(filepath, O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW, 0644);
 	if (fd < 0) {
 		lwsl_err("%s: unable to create repo list: %s\n", __func__, filepath);
 		ret = -1;
