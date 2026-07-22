@@ -79,6 +79,23 @@ task_function(void *user, enum lws_threadpool_task_status s)
 	char outlive = 0;
 
 	/*
+	 * If the wsi we are bound to went away (client closed the connection,
+	 * or the request was dequeued), the threadpool asks us to stop by
+	 * passing LWS_TP_STATUS_STOPPING.  We must honour it promptly and
+	 * return STOPPED, otherwise this worker stays pinned until the
+	 * (potentially very long) jg2_ctx_fill / git blame completes, and
+	 * worse, once we return SYNC the worker parks in the sync wait
+	 * dependent on a service thread that may never come for a wsi that
+	 * is already gone.
+	 *
+	 * See the lws threadpool README: a task is only ever told RUNNING or
+	 * STOPPING in the status argument, and STOPPING means clean up and
+	 * return LWS_TP_RETURN_STOPPED.
+	 */
+	if (s == LWS_TP_STATUS_STOPPING)
+		return LWS_TP_RETURN_STOPPED;
+
+	/*
 	 * first time, we must do the http reply, and either acquire the
 	 * jg2 ctx or finish the transaction
 	 */
