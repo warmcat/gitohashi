@@ -322,12 +322,23 @@ job_blog(struct jg2_ctx *ctx)
 					capturing_summary = 2;
 				} else if (capturing_summary == 1 && summary_len < sizeof(summary) - 2) {
 					size_t copy_len = len;
-					if (summary_len + copy_len >= sizeof(summary) - 1)
-						copy_len = sizeof(summary) - 1 - summary_len;
-					
+
+					/*
+					 * Add the line separator first, then
+					 * clamp the copy against the room that
+					 * is actually left including the NUL.
+					 * Clamping before the '\n' increment
+					 * lets summary_len + copy_len reach
+					 * sizeof(summary), so the NUL write
+					 * below went one byte past summary[].
+					 */
+
 					if (summary_len > 0)
 						summary[summary_len++] = '\n';
-					
+
+					if (summary_len + copy_len >= sizeof(summary))
+						copy_len = sizeof(summary) - 1 - summary_len;
+
 					memcpy(summary + summary_len, p, copy_len);
 					summary_len += copy_len;
 					summary[summary_len] = '\0';
