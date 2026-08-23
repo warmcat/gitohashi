@@ -321,16 +321,32 @@ job_blog(struct jg2_ctx *ctx)
 					/* We set capturing_summary = 2 to mean "done" so we don't restart */
 					capturing_summary = 2;
 				} else if (capturing_summary == 1 && summary_len < sizeof(summary) - 2) {
+					const char *q = p;
+					size_t off = summary_len;
 					size_t copy_len = len;
-					if (summary_len + copy_len >= sizeof(summary) - 1)
-						copy_len = sizeof(summary) - 1 - summary_len;
-					
-					if (summary_len > 0)
-						summary[summary_len++] = '\n';
-					
-					memcpy(summary + summary_len, p, copy_len);
-					summary_len += copy_len;
-					summary[summary_len] = '\0';
+
+					/*
+					 * Append the line separator, then copy
+					 * as much of the line as fits, stopping
+					 * at the last byte of summary[] so that
+					 * it is always available for the
+					 * terminating NUL.  Every write into
+					 * summary[] is directly guarded by a
+					 * comparison against the constant
+					 * sizeof(summary) - 1, so both the
+					 * copies and the NUL stay provably
+					 * inside the array.
+					 */
+
+					if (off)
+						summary[off++] = '\n';
+
+					while (copy_len && off < sizeof(summary) - 1)
+						summary[off++] = *q++;
+
+					summary[off] = '\0';
+
+					summary_len = off;
 
 					if (len > 0 && p[0] != '#' &&
 					    !(len >= 2 && p[0] == '!' && p[1] == '[') &&
