@@ -321,16 +321,31 @@ job_blog(struct jg2_ctx *ctx)
 					/* We set capturing_summary = 2 to mean "done" so we don't restart */
 					capturing_summary = 2;
 				} else if (capturing_summary == 1 && summary_len < sizeof(summary) - 2) {
+					char *sp = summary + summary_len;
+					char *se = summary + sizeof(summary) - 1;
 					size_t copy_len = len;
-					if (summary_len + copy_len >= sizeof(summary) - 1)
-						copy_len = sizeof(summary) - 1 - summary_len;
-					
-					if (summary_len > 0)
-						summary[summary_len++] = '\n';
-					
-					memcpy(summary + summary_len, p, copy_len);
-					summary_len += copy_len;
-					summary[summary_len] = '\0';
+
+					/*
+					 * Add the line separator first, then
+					 * clamp the copy against the space
+					 * really left using pointers, so the
+					 * bound used for the copy and the NUL
+					 * is the same expression the compiler
+					 * (and static analysis) can see is
+					 * inside summary[].  Keeping the NUL
+					 * at se keeps it in bounds.
+					 */
+
+					if (sp > summary)
+						*sp++ = '\n';
+
+					if (copy_len > (size_t)(se - sp))
+						copy_len = (size_t)(se - sp);
+
+					memcpy(sp, p, copy_len);
+					sp[copy_len] = '\0';
+
+					summary_len = (size_t)(sp + copy_len - summary);
 
 					if (len > 0 && p[0] != '#' &&
 					    !(len >= 2 && p[0] == '!' && p[1] == '[') &&

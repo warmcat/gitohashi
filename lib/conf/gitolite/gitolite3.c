@@ -415,6 +415,7 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
 			     const char *stdin_path, const char *output)
 {
 	int ret = 0, res = -1, fd, fd1, n;
+	mode_t oumask;
 	struct gl3_query q;
 	char buf[512], temp[32];
 
@@ -433,10 +434,20 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
 	 * Use mkstemp() to get an unpredictable, O_EXCL-created temp file so
 	 * an attacker cannot pre-plant a symlink at a guessable /tmp name and
 	 * have us truncate its target.
+	 *
+	 * Set a restrictive umask around the mkstemp() as well so the temp
+	 * file cannot come into existence with any group / other access,
+	 * independently of what umask we were started under (CID 505651).
+	 * The window is a single syscall; file creation modes used elsewhere
+	 * in this process only lose group / other bits if they race with it.
 	 */
 
 	lws_snprintf(temp, sizeof(temp), "/tmp/_gl3qXXXXXX");
+
+	oumask = umask(0077);
 	fd = mkstemp(temp);
+	umask(oumask);
+
 	if (fd < 0) {
 		lwsl_err("%s: mkstemp failed: %s\n", __func__, strerror(errno));
 		ret = -4;
