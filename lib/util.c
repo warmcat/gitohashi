@@ -151,7 +151,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 			// lwsl_err("%s: branch seen as %s\n", __func__, sr->e[JG2_PE_BRANCH]);
 
 		}
-		if (klen == 1 && key_start[0] == 'd') {/* id hex hash string*/
+		if (klen == 2 && !strncmp(key_start, "id", 2)) {/* id hex hash string*/
 			pp = strdup(p + 1);
 			sr->e[JG2_PE_ID] = (const char *)pp;
 
@@ -163,7 +163,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 				pp++;
 			}
 		}
-		if (klen == 1 && key_start[0] == 's') { /* ofs */
+		if (klen == 3 && !strncmp(key_start, "ofs", 3)) { /* ofs */
 			sr->offset = atoi(p + 1);
 		}
 		if (klen == 1 && key_start[0] == 'q') {
