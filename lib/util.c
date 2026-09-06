@@ -284,65 +284,56 @@ jg2_repopath_destroy(struct jg2_split_repopath *sr)
  *
  * if inlim_totlen is non-null, it restricts the amount of input that can be
  * used on input, and contains the amount of input used on output.
+ *
+ * The escaping itself is done by lws; we additionally ask for the HTML_SAFE
+ * set, because gitohashi inlines JSON into the initial HTML page inside
+ * <div id='initial-json'>, where a literal '<' or '&' would be parsed as
+ * markup.  A JSON \u003c escape is invisible to JSON.parse() in the browser,
+ * so this does not affect the js side, which must (and does) do its own HTML
+ * escaping when it builds DOM from the parsed JSON.
  */
 
 int
 jg2_json_purify(char *escaped, const char *string, int len,
 		size_t *inlim_totlen)
 {
-	const char *p = string, *op = p;
-	char *q = escaped;
-	int inlim = -1;
+	int in_used = -1; /* unlimited */
 
-	if (inlim_totlen)
-		inlim = *inlim_totlen;
+	if (len < 1) {
+		if (inlim_totlen)
+			*inlim_totlen = 0;
+		if (escaped)
+			escaped[0] = '\0';
 
-	if (!p) {
-		escaped[0] = '\0';
 		return 0;
 	}
 
-	while (len-- > 6 && (p - op) != inlim && *p) {
-		if (*p == '\t') {
-			p++;
-			*q++ = '\\';
-			*q++ = 't';
-			continue;
-		}
+	/*
+	 * lws treats a positive *in_used as an input cap; 0 or negative means
+	 * unlimited.  Preserve the old jg2 semantics that a cap of 0 means
+	 * "process nothing" for callers that distinguish it (the diff
+	 * streaming in job_commit).
+	 */
 
-		if (*p == '\n') {
-			p++;
-			*q++ = '\\';
-			*q++ = 'n';
-			continue;
-		}
+	if (inlim_totlen) {
+		if (!*inlim_totlen) {
+			escaped[0] = '\0';
 
-		if (*p == '\r') {
-			p++;
-			*q++ = '\\';
-			*q++ = 'r';
-			continue;
+			return 0;
 		}
-
-		if (*p == '&' || *p == '<' || *p == '>' || *p == '\"' ||
-		    *p == '\\' || *p == '=' || (unsigned char)(*p) < 0x20) {
-			*q++ = '\\';
-			*q++ = 'u';
-			*q++ = '0';
-			*q++ = '0';
-			*q++ = hex[((*p) >> 4) & 15];
-			*q++ = hex[(*p) & 15];
-			len -= 5;
-			p++;
-		} else
-			*q++ = *p++;
+		if (*inlim_totlen > 0x7fffffff)
+			in_used = 0x7fffffff;
+		else
+			in_used = (int)*inlim_totlen;
 	}
-	*q = '\0';
+
+	lws_json_purify_flags(escaped, string, len, &in_used,
+			      LWS_JSON_PURIFY_FLAG_HTML_SAFE);
 
 	if (inlim_totlen)
-		*inlim_totlen = p - op;
+		*inlim_totlen = (size_t)in_used;
 
-	return q - escaped;
+	return (int)strlen(escaped);
 }
 
 void *
@@ -391,31 +382,31 @@ oid_to_hex_cstr(char *oid_hex, const git_oid *oid)
 	return oid_hex;
 }
 
-const char *
-ellipsis_string(char *out, const char *in, int max)
-{
-	if (in != out) {
-		out[max - 4] = '\0';
-		strncpy(out, in, max - 4);
-		if (!out[max - 4])
-			return out;
-	} else
-		if (strlen(in) < (size_t)max - 4)
-			return out;
-
-	out[max - 4] = '.';
-	out[max - 3] = '.';
-	out[max - 2] = '.';
-	out[max - 1] = '\0';
-
-	return out;
-}
+/*
+ * Purify into out with a bound of max, adding "..." if the input had to be
+ * truncated.  Truncation only happens inside jg2_json_purify(), which never
+ * splits an escape sequence, so the result is always syntactically valid
+ * JSON no matter what is in the input or how long it is.
+ */
 
 const char *
 ellipsis_purify(char *out, const char *in, int max)
 {
-	jg2_json_purify(out, in, max, NULL);
-	ellipsis_string(out, out, max);
+	size_t inlim = (size_t)max;
+	int n;
+
+	if (max < 8) {
+		out[0] = '\0';
+
+		return out;
+	}
+
+	/* leave room for the "..." if we end up truncating */
+
+	n = jg2_json_purify(out, in, max - 3, &inlim);
+
+	if (in && in[inlim])
+		memcpy(out + n, "...", 4);
 
 	return out;
 }
@@ -427,16 +418,412 @@ time_json(const git_time *t, struct jg2_ctx *ctx)
 		       (unsigned long long)t->time, t->offset);
 }
 
+/*
+ * RFC 2047 "encoded-word" decoding for signature names, eg, git gives us
+ *
+ *      =?UTF-8?q?=E9=A9=AC=E6=B6=9B?= <matao@sud.tech>
+ *
+ * when the author name isn't representable in the raw header encoding.
+ *
+ * sig->name is attacker-controllable, so this is written to be completely
+ * safe on hostile input:
+ *
+ *  - only charset tokens UTF-8, US-ASCII and ISO-8859-1 are converted;
+ *    anything else passes through literally
+ *
+ *  - decoded output is strictly validated: it must be valid UTF-8 with no
+ *    overlong forms, surrogates, C0 control characters or NUL, otherwise
+ *    that encoded-word passes through literally
+ *
+ *  - decoding happens exactly once; the result is never rescanned, so
+ *    encoded-words that decode to further encoded-words stay inert text
+ *
+ *  - everything is bounded to the caller's buffer; there is no allocation
+ *
+ * The decoded result is still just untrusted content: callers must pass it
+ * through the usual escaping (ellipsis_purify() / ellipsis_text()) as with
+ * any other signature string.
+ *
+ * Returns in, unchanged, if in contains nothing decodable, otherwise the
+ * decoded, NUL-terminated string in out.
+ */
+
+#define RFC2047_CHARSET_MAX 40
+#define RFC2047_ENCTXT_MAX  256
+#define RFC2047_WORD_MAX    512
+
+static int
+hexval(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+
+	return -1;
+}
+
+/* strict UTF-8 validation: rejects overlong forms, surrogates, anything
+ * beyond U+10FFFF, stray continuation bytes, embedded NUL and C0 controls */
+
+static int
+utf8_clean(const char *s, size_t len)
+{
+	size_t i = 0, k;
+
+	while (i < len) {
+		unsigned char c = (unsigned char)s[i];
+		unsigned char lo_min, lo_max;
+		int n;
+
+		if (c < 0x80) {
+			if (c < 0x20)
+				return 0;
+			i++;
+
+			continue;
+		}
+
+		if (c < 0xC2) /* continuation byte or overlong starter */
+			return 0;
+
+		if (c < 0xE0) {
+			lo_min = 0x80;
+			lo_max = 0xBF;
+			n = 1;
+		} else if (c < 0xF0) {
+			if (c == 0xE0) {
+				lo_min = 0xA0;
+				lo_max = 0xBF;
+			} else if (c == 0xED) { /* no surrogates */
+				lo_min = 0x80;
+				lo_max = 0x9F;
+			} else {
+				lo_min = 0x80;
+				lo_max = 0xBF;
+			}
+			n = 2;
+		} else if (c < 0xF5) {
+			if (c == 0xF0) {
+				lo_min = 0x90;
+				lo_max = 0xBF;
+			} else if (c == 0xF4) { /* cap at U+10FFFF */
+				lo_min = 0x80;
+				lo_max = 0x8F;
+			} else {
+				lo_min = 0x80;
+				lo_max = 0xBF;
+			}
+			n = 3;
+		} else
+			return 0;
+
+		/* the n continuation bytes live at i + 1 .. i + n */
+
+		if (i + (size_t)n >= len)
+			return 0;
+		if ((unsigned char)s[i + 1] < lo_min ||
+		    (unsigned char)s[i + 1] > lo_max)
+			return 0;
+
+		for (k = 2; k <= (size_t)n; k++)
+			if (((unsigned char)s[i + k] & 0xC0) != 0x80)
+				return 0;
+
+		i += (size_t)n + 1;
+	}
+
+	return 1;
+}
+
+/*
+ * Try to strictly parse and decode one encoded-word at p (which starts
+ * "=?").  On success returns 1, sets *next to just past the terminating
+ * "?=" and leaves the decoded, charset-converted, validated bytes
+ * NUL-terminated in tmp[].  Returns 0 if there is no strictly valid,
+ * convertible encoded-word at p: the caller then passes the text through
+ * literally.
+ */
+
+static int
+decode_word(const char *p, const char **next, char *tmp, size_t tmp_len)
+{
+	const char *cs = p + 2, *enc, *etxt;
+	size_t cs_len = 0, et_len = 0, i, o = 0, raw_len;
+	char lcs[RFC2047_CHARSET_MAX + 1];
+	char enc_ch;
+	int cs_id = 0, n;
+
+	/* copy and normalize the charset token */
+
+	while (cs_len < RFC2047_CHARSET_MAX && cs[cs_len] &&
+	       cs[cs_len] != '?') {
+		char c = cs[cs_len];
+
+		if (c >= 'A' && c <= 'Z')
+			c = (char)(c + ('a' - 'A'));
+
+		lcs[cs_len++] = c;
+	}
+
+	if (!cs_len || cs_len == RFC2047_CHARSET_MAX || cs[cs_len] != '?')
+		return 0;
+
+	lcs[cs_len] = '\0';
+
+	/* discard any RFC 2231 language tag, =?utf-8*en? style */
+
+	for (i = 0; i < cs_len; i++)
+		if (lcs[i] == '*') {
+			lcs[i] = '\0';
+
+			break;
+		}
+
+	if (!strcmp(lcs, "utf-8"))
+		cs_id = 1;
+	else if (!strcmp(lcs, "us-ascii") || !strcmp(lcs, "ascii"))
+		cs_id = 2;
+	else if (!strcmp(lcs, "iso-8859-1") || !strcmp(lcs, "latin1") ||
+		 !strcmp(lcs, "latin-1"))
+		cs_id = 3;
+	else
+		return 0;
+
+	/* the transfer encoding: one of B, b, Q or q, then '?' */
+
+	enc = cs + cs_len + 1;
+	enc_ch = *enc;
+	if ((enc_ch != 'B' && enc_ch != 'b' && enc_ch != 'Q' && enc_ch != 'q')
+	    || enc[1] != '?')
+		return 0;
+
+	etxt = enc + 2;
+
+	/* find the "?=" terminator, validating encoded-text as we go */
+
+	while (et_len < RFC2047_ENCTXT_MAX) {
+		unsigned char c = (unsigned char)etxt[et_len];
+
+		if (!c)
+			return 0;
+
+		if (c == '?')
+			break;
+
+		if (enc_ch == 'B' || enc_ch == 'b') {
+			if ((c < 'A' || c > 'Z') && (c < 'a' || c > 'z') &&
+			    (c < '0' || c > '9') && c != '+' && c != '/' &&
+			    c != '=')
+				return 0;
+		} else {
+			/* Q: printable ascii except space and '?' */
+			if (c < 0x21 || c > 0x7e)
+				return 0;
+		}
+
+		et_len++;
+	}
+
+	if (et_len == RFC2047_ENCTXT_MAX || etxt[et_len] != '?' ||
+	    etxt[et_len + 1] != '=')
+		return 0; /* unterminated or oversized */
+
+	/* b64 padding belongs in the last two positions only */
+
+	if (enc_ch == 'B' || enc_ch == 'b')
+		for (i = 0; i < et_len; i++)
+			if (etxt[i] == '=' && i + 2 < et_len)
+				return 0;
+
+	*next = etxt + et_len + 2;
+
+	/*
+	 * Decode the transfer encoding into raw bytes.  Keep the raw bytes
+	 * to the first half of tmp, so ISO-8859-1 -> UTF-8 conversion can
+	 * expand in place without overflowing.
+	 */
+
+	if (enc_ch == 'B' || enc_ch == 'b') {
+		n = lws_b64_decode_string_len(etxt, (int)et_len, tmp,
+					      (int)(tmp_len / 2));
+		if (n <= 0)
+			return 0;
+
+		raw_len = (size_t)n;
+	} else {
+		/* Q: =XX hex escapes, '_' is a space, rest is literal */
+
+		for (i = 0; i < et_len; i++) {
+			char c = etxt[i];
+
+			if (c == '=') {
+				int v1, v2;
+
+				/* both hex digits must be inside the word */
+
+				if (i + 2 >= et_len)
+					return 0;
+
+				v1 = hexval(etxt[i + 1]);
+				v2 = hexval(etxt[i + 2]);
+				if (v1 < 0 || v2 < 0)
+					return 0;
+
+				if (o + 1 >= tmp_len / 2)
+					return 0;
+
+				tmp[o++] = (char)((v1 << 4) | v2);
+				i += 2;
+
+				continue;
+			}
+
+			if (o + 1 >= tmp_len / 2)
+				return 0;
+
+			tmp[o++] = c == '_' ? ' ' : c;
+		}
+
+		raw_len = o;
+	}
+
+	if (!raw_len)
+		return 0;
+
+	/* convert the raw bytes to UTF-8 if needed */
+
+	if (cs_id == 3) { /* ISO-8859-1 */
+		for (i = 0, o = 0; i < raw_len; i++) {
+			unsigned char c = (unsigned char)tmp[i];
+
+			if (c < 0x80) {
+				tmp[o++] = (char)c;
+
+				continue;
+			}
+
+			tmp[o++] = (char)(0xC0 | (c >> 6));
+			tmp[o++] = (char)(0x80 | (c & 0x3f));
+		}
+
+		raw_len = o;
+	}
+
+	/* the result must be clean UTF-8, or we keep the encoded form */
+
+	if (!utf8_clean(tmp, raw_len))
+		return 0;
+
+	if (raw_len >= tmp_len) /* room for the NUL */
+		return 0;
+
+	tmp[raw_len] = '\0';
+
+	return 1;
+}
+
+/*
+ * Decode any RFC 2047 encoded-words in in into out[].  See the notes at
+ * the RFC2047 defines above for the safety properties.
+ */
+
+const char *
+jg2_rfc2047_utf8(const char *in, char *out, size_t out_len)
+{
+	const char *p = in, *lit = in;
+	char *q = out;
+	int any = 0;
+
+	if (!in || !out || out_len < 2 || !strstr(in, "=?"))
+		return in;
+
+	while (*p) {
+		const char *next;
+		char tmp[RFC2047_WORD_MAX];
+		size_t t;
+
+		if (p[0] == '=' && p[1] == '?' &&
+		    decode_word(p, &next, tmp, sizeof(tmp))) {
+			/* flush pending literal text up to the word */
+
+			while (lit < p && (size_t)(q - out) + 1 < out_len)
+				*q++ = *lit++;
+
+			/* append the decoded word */
+
+			for (t = 0; tmp[t] &&
+			     (size_t)(q - out) + 1 < out_len; t++)
+				*q++ = tmp[t];
+
+			lit = p = next;
+			any = 1;
+
+			/*
+			 * RFC 2047: linear whitespace between adjacent
+			 * encoded-words is ignored.  Only drop it if another
+			 * strictly valid word really follows it.
+			 */
+
+			while (*lit == ' ' || *lit == '\t') {
+				const char *try_next;
+				char try_tmp[RFC2047_WORD_MAX];
+				size_t k = 0;
+
+				while (lit[k] == ' ' || lit[k] == '\t')
+					k++;
+
+				if (lit[k] == '=' && lit[k + 1] == '?' &&
+				    decode_word(lit + k, &try_next, try_tmp,
+						sizeof(try_tmp)))
+					lit += k;
+				else
+					break;
+			}
+
+			p = lit;
+
+			continue;
+		}
+
+		p++;
+	}
+
+	if (!any)
+		return in;
+
+	/* flush any trailing literal text */
+
+	while (lit < p && (size_t)(q - out) + 1 < out_len)
+		*q++ = *lit++;
+
+	*q = '\0';
+
+	return out;
+}
+
+
+
 void
 name_email_json(const char *name, const char *email, struct jg2_ctx *ctx)
 {
-	char e[64], e1[64], md5_hex[33];
+	char e[128], e1[64], md5_hex[33], decoded[RFC2047_WORD_MAX * 2];
 
 	if (!name)
 		name = "unknown";
 
 	if (!email)
 		email = "unknown";
+
+	/*
+	 * Show RFC 2047 encoded author names decoded to UTF-8.  We leave the
+	 * email alone: encoded-words don't apply to addr-specs, and the
+	 * gravatar md5 is computed from the raw email.
+	 */
+
+	name = jg2_rfc2047_utf8(name, decoded, sizeof(decoded));
 
 	md5_to_hex_cstr(md5_hex, email_md5(ctx->vhost, email));
 
@@ -519,25 +906,67 @@ signature_json(const git_signature *sig, struct jg2_ctx *ctx)
 	CTX_BUF_APPEND(" }");
 }
 
+/*
+ * Bounded copy of in into out for text (non-JSON) contexts, like the
+ * synthesized patch headers.  Control characters and DEL become spaces so a
+ * crafted identity cannot inject fake headers into the patch text; other
+ * bytes, including UTF-8, pass through so it stays readable.  Adds "..." if
+ * the input had to be truncated.
+ */
+
+const char *
+ellipsis_text(char *out, const char *in, int max)
+{
+	const char *p = in;
+	char *q = out;
+	int budget = max - 4; /* leave room for "..." and NUL */
+
+	if (!p || budget < 1) {
+		out[0] = '\0';
+
+		return out;
+	}
+
+	while (budget-- > 0 && *p) {
+		unsigned char c = (unsigned char)*p++;
+
+		if (c < 0x20 || c == 0x7f)
+			c = ' ';
+
+		*q++ = (char)c;
+	}
+
+	if (*p) {
+		*q++ = '.';
+		*q++ = '.';
+		*q++ = '.';
+	}
+	*q = '\0';
+
+	return out;
+}
+
 void
 signature_text(const git_signature *sig, struct jg2_ctx *ctx)
 {
 	struct tm tm, *tmr;
-	char dt[96], n[128], e[128];
+	char dt[96], n[128], e[128], dn[RFC2047_WORD_MAX * 2];
 
 	tmr = localtime_r((const time_t *)&sig->when.time, &tm);
 
 	/*
 	 * sig->name and sig->email are attacker-controllable (commit author
-	 * fields).  The non-patch path escapes them via ellipsis_purify() in
-	 * name_email_json(); do the same here so a crafted identity cannot
-	 * inject arbitrary content into the patch output.
+	 * fields).  This is text output, so we keep it readable but stop
+	 * control characters from injecting new patch headers.  RFC 2047
+	 * encoded names are decoded to UTF-8 first; the email stays raw since
+	 * it's an addr-spec.
 	 */
 
 	CTX_BUF_APPEND("Author: %s <%s>\n",
-		       ellipsis_purify(n, sig->name ? sig->name : "unknown",
-				       sizeof(n)),
-		       ellipsis_purify(e, sig->email ? sig->email : "unknown",
+		       ellipsis_text(n, jg2_rfc2047_utf8(
+					sig->name ? sig->name : "unknown",
+					dn, sizeof(dn)), sizeof(n)),
+		       ellipsis_text(e, sig->email ? sig->email : "unknown",
 				       sizeof(e)));
 
 	if (tmr) {

@@ -204,8 +204,10 @@ job_commit_start(struct jg2_ctx *ctx)
 	ctx->size = 0;
 	ctx->ofs = lwsac_sizeof(1);
 
-	if (!ctx->raw_patch && !ctx->body)
+	if (!ctx->raw_patch && !ctx->body) {
 		CTX_BUF_APPEND("},\n \"diff\": \"");
+		ctx->diff_open = 1;
+	}
 
 	ret = 0;
 
@@ -289,10 +291,16 @@ job_commit(struct jg2_ctx *ctx)
 		if (!ctx->raw_patch && !ctx->body) {
 			CTX_BUF_APPEND("\"\n");
 
-			if (ctx->lac)
+			/*
+			 * If there's a diff coming, open its string now.  If
+			 * not, leave the item open, so meta_trailer() can add
+			 * the "s" section and close it.
+			 */
+
+			if (ctx->lac) {
 				CTX_BUF_APPEND(",\n \"diff\": \"");
-			else
-				CTX_BUF_APPEND("}\n");
+				ctx->diff_open = 1;
+			}
 		}
 
 		if (ctx->raw_patch && !ctx->body)
@@ -356,7 +364,8 @@ job_commit(struct jg2_ctx *ctx)
 
 ended:
 	if (!ctx->raw_patch)
-		meta_trailer(ctx, "\"");
+		/* if a diff string is open, close it in the trailer */
+		meta_trailer(ctx, ctx->diff_open ? "\"" : "");
 	ctx->job = NULL;
 	ctx->final = 1;
 	ctx->body = NULL;

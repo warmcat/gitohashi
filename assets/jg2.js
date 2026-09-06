@@ -922,8 +922,19 @@ function identity(i, size, parts)
 		"<img class='onhover' src='" + identity_av_base(i) +
 		"'/>";
 
-	if (parts & 1)
-		s += san(decodeURIComponent(i.name));
+	if (parts & 1) {
+		var nm;
+
+		/* author names can contain anything, including stray '%' */
+
+		try {
+			nm = decodeURIComponent(i.name);
+		} catch (e) {
+			nm = i.name;
+		}
+
+		s += san(nm);
+	}
 	
 	s += "</span></a>";
 	
@@ -956,8 +967,8 @@ function aliases(oid)
 				"<div class=\"putt1\"><img class=\"branch\"></div>" +
 				"<div class=\"putt2\">" + i18n("Branch Snapshot") + "</div>" +
 				"<div class=\"putt3\"><img class=\"archive\"></div>'>" +
-				"</td><td class='tight'><span>" +
-				r.substr(11) + "</span></td></tr></table></span>";
+						"</td><td class='tight'><span>" +
+				san(r.substr(11)) + "</span></td></tr></table></span>";
 		else
 			if (r.substr(0, 10) === "refs/tags/")
 				irefs += " <span class='inline_tag'>" +
@@ -969,7 +980,7 @@ function aliases(oid)
 							"<div class=\"putt2\">" + i18n("Tag Snapshot") + "</div>" +
 							"<div class=\"putt3\"><img class=\"archive\"></div>'>" +
 							"&nbsp;" +
-						 r.substr(10) + "</div></span>";
+						 san(r.substr(10)) + "</div></span>";
 	}
 	
 	return irefs;
@@ -1125,7 +1136,8 @@ function html_branches(now, count)
 				"<div class=\"putt3\"><img class=\"archive\"></div>'>" +
 			 "</td><td><a href=\"" +
 			makeurl(reponame, "tree", rpath, branches[n].name.substr(11),
-					qid, qofs) + "\">" + branches[n].name.substr(11) + "</a>" +
+					qid, qofs) + "\">" +
+					san(branches[n].name.substr(11)) + "</a>" +
 		    "</td><td>" + san(branches[n].summary.msg) +
 		    "</td><td>" + identity(branches[n].summary.sig_author, 16, 1) +
 		    "</td><td>" + agify(now, branches[n].summary.time) +
@@ -1171,9 +1183,9 @@ function html_tags(now, count)
 				"<div class=\"putt2\">" + i18n("Tag Snapshot") + "</div>" +
 				"<div class=\"putt3\"><img class=\"archive\"></div>'>" +
 				"</span></td><td><a href=\"" +
-			makeurl(reponame, "tree", rpath, qbranch,
-				tags[n].summary.oid.oid, qofs) + "\">" +
-				tags[n].name.substr(10) + "</a>" +
+				makeurl(reponame, "tree", rpath, qbranch,
+					tags[n].summary.oid.oid, qofs) + "\">" +
+					san(tags[n].name.substr(10)) + "</a>" +
 		"</td><td>" + san(mm) +
 		"</td><td>" + identity(tags[n].summary.sig_tagger, 16, 1) +
 	    "</td><td>" + agify(now, tags[n].summary.time) +
@@ -1678,8 +1690,8 @@ function blame_mousemove(e)
 									"<img class=\"blame hflip\"></div>" +
 
 								"<div class=\"putt2\">" + dl +
-								
-									thehunk.sig_final.name + "<br>" +
+
+									san(thehunk.sig_final.name) + "<br>" +
 									agify(new Date().getTime() / 1000,
 										thehunk.sig_final.git_time.time) +
 										"</div>" +
@@ -1689,7 +1701,7 @@ function blame_mousemove(e)
 									makeurl(reponame, "commit", null,
 											null, thehunk.final_oid.oid, null) +
 										"\">" +
-										thehunk.log_final + "</a>" +
+										san(thehunk.log_final) + "</a>" +
 								"</div></div>" +
 										
 								"<div class=\"putt3_blame\"><span class='gravatar64'>" +

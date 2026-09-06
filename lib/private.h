@@ -447,6 +447,7 @@ struct jg2_ctx {
 	unsigned int index_open_ro:1;
 	unsigned int no_rider:1;
 	unsigned int onetime:1;
+	unsigned int diff_open:1; /**< job_commit: the "diff" string is open */
 };
 
 struct jg2_global {
@@ -499,10 +500,13 @@ const char *
 oid_to_hex_cstr(char *oid_hex, const git_oid *oid);
 
 const char *
-ellipsis_string(char *out, const char *in, int max);
+ellipsis_purify(char *out, const char *in, int max);
 
 const char *
-ellipsis_purify(char *out, const char *in, int max);
+ellipsis_text(char *out, const char *in, int max);
+
+const char *
+jg2_rfc2047_utf8(const char *in, char *out, size_t out_len);
 
 void
 time_json(const git_time *t, struct jg2_ctx *ctx);
