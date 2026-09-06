@@ -284,65 +284,56 @@ jg2_repopath_destroy(struct jg2_split_repopath *sr)
  *
  * if inlim_totlen is non-null, it restricts the amount of input that can be
  * used on input, and contains the amount of input used on output.
+ *
+ * The escaping itself is done by lws; we additionally ask for the HTML_SAFE
+ * set, because gitohashi inlines JSON into the initial HTML page inside
+ * <div id='initial-json'>, where a literal '<' or '&' would be parsed as
+ * markup.  A JSON \u003c escape is invisible to JSON.parse() in the browser,
+ * so this does not affect the js side, which must (and does) do its own HTML
+ * escaping when it builds DOM from the parsed JSON.
  */
 
 int
 jg2_json_purify(char *escaped, const char *string, int len,
 		size_t *inlim_totlen)
 {
-	const char *p = string, *op = p;
-	char *q = escaped;
-	int inlim = -1;
+	int in_used = -1; /* unlimited */
 
-	if (inlim_totlen)
-		inlim = *inlim_totlen;
+	if (len < 1) {
+		if (inlim_totlen)
+			*inlim_totlen = 0;
+		if (escaped)
+			escaped[0] = '\0';
 
-	if (!p) {
-		escaped[0] = '\0';
 		return 0;
 	}
 
-	while (len-- > 6 && (p - op) != inlim && *p) {
-		if (*p == '\t') {
-			p++;
-			*q++ = '\\';
-			*q++ = 't';
-			continue;
-		}
+	/*
+	 * lws treats a positive *in_used as an input cap; 0 or negative means
+	 * unlimited.  Preserve the old jg2 semantics that a cap of 0 means
+	 * "process nothing" for callers that distinguish it (the diff
+	 * streaming in job_commit).
+	 */
 
-		if (*p == '\n') {
-			p++;
-			*q++ = '\\';
-			*q++ = 'n';
-			continue;
-		}
+	if (inlim_totlen) {
+		if (!*inlim_totlen) {
+			escaped[0] = '\0';
 
-		if (*p == '\r') {
-			p++;
-			*q++ = '\\';
-			*q++ = 'r';
-			continue;
+			return 0;
 		}
-
-		if (*p == '&' || *p == '<' || *p == '>' || *p == '\"' ||
-		    *p == '\\' || *p == '=' || (unsigned char)(*p) < 0x20) {
-			*q++ = '\\';
-			*q++ = 'u';
-			*q++ = '0';
-			*q++ = '0';
-			*q++ = hex[((*p) >> 4) & 15];
-			*q++ = hex[(*p) & 15];
-			len -= 5;
-			p++;
-		} else
-			*q++ = *p++;
+		if (*inlim_totlen > 0x7fffffff)
+			in_used = 0x7fffffff;
+		else
+			in_used = (int)*inlim_totlen;
 	}
-	*q = '\0';
+
+	lws_json_purify_flags(escaped, string, len, &in_used,
+			      LWS_JSON_PURIFY_FLAG_HTML_SAFE);
 
 	if (inlim_totlen)
-		*inlim_totlen = p - op;
+		*inlim_totlen = (size_t)in_used;
 
-	return q - escaped;
+	return (int)strlen(escaped);
 }
 
 void *
@@ -391,31 +382,31 @@ oid_to_hex_cstr(char *oid_hex, const git_oid *oid)
 	return oid_hex;
 }
 
-const char *
-ellipsis_string(char *out, const char *in, int max)
-{
-	if (in != out) {
-		out[max - 4] = '\0';
-		strncpy(out, in, max - 4);
-		if (!out[max - 4])
-			return out;
-	} else
-		if (strlen(in) < (size_t)max - 4)
-			return out;
-
-	out[max - 4] = '.';
-	out[max - 3] = '.';
-	out[max - 2] = '.';
-	out[max - 1] = '\0';
-
-	return out;
-}
+/*
+ * Purify into out with a bound of max, adding "..." if the input had to be
+ * truncated.  Truncation only happens inside jg2_json_purify(), which never
+ * splits an escape sequence, so the result is always syntactically valid
+ * JSON no matter what is in the input or how long it is.
+ */
 
 const char *
 ellipsis_purify(char *out, const char *in, int max)
 {
-	jg2_json_purify(out, in, max, NULL);
-	ellipsis_string(out, out, max);
+	size_t inlim = (size_t)max;
+	int n;
+
+	if (max < 8) {
+		out[0] = '\0';
+
+		return out;
+	}
+
+	/* leave room for the "..." if we end up truncating */
+
+	n = jg2_json_purify(out, in, max - 3, &inlim);
+
+	if (in && in[inlim])
+		memcpy(out + n, "...", 4);
 
 	return out;
 }
@@ -430,7 +421,7 @@ time_json(const git_time *t, struct jg2_ctx *ctx)
 void
 name_email_json(const char *name, const char *email, struct jg2_ctx *ctx)
 {
-	char e[64], e1[64], md5_hex[33];
+	char e[128], e1[64], md5_hex[33];
 
 	if (!name)
 		name = "unknown";
@@ -519,6 +510,46 @@ signature_json(const git_signature *sig, struct jg2_ctx *ctx)
 	CTX_BUF_APPEND(" }");
 }
 
+/*
+ * Bounded copy of in into out for text (non-JSON) contexts, like the
+ * synthesized patch headers.  Control characters and DEL become spaces so a
+ * crafted identity cannot inject fake headers into the patch text; other
+ * bytes, including UTF-8, pass through so it stays readable.  Adds "..." if
+ * the input had to be truncated.
+ */
+
+const char *
+ellipsis_text(char *out, const char *in, int max)
+{
+	const char *p = in;
+	char *q = out;
+	int budget = max - 4; /* leave room for "..." and NUL */
+
+	if (!p || budget < 1) {
+		out[0] = '\0';
+
+		return out;
+	}
+
+	while (budget-- > 0 && *p) {
+		unsigned char c = (unsigned char)*p++;
+
+		if (c < 0x20 || c == 0x7f)
+			c = ' ';
+
+		*q++ = (char)c;
+	}
+
+	if (*p) {
+		*q++ = '.';
+		*q++ = '.';
+		*q++ = '.';
+	}
+	*q = '\0';
+
+	return out;
+}
+
 void
 signature_text(const git_signature *sig, struct jg2_ctx *ctx)
 {
@@ -529,15 +560,14 @@ signature_text(const git_signature *sig, struct jg2_ctx *ctx)
 
 	/*
 	 * sig->name and sig->email are attacker-controllable (commit author
-	 * fields).  The non-patch path escapes them via ellipsis_purify() in
-	 * name_email_json(); do the same here so a crafted identity cannot
-	 * inject arbitrary content into the patch output.
+	 * fields).  This is text output, so we keep it readable but stop
+	 * control characters from injecting new patch headers.
 	 */
 
 	CTX_BUF_APPEND("Author: %s <%s>\n",
-		       ellipsis_purify(n, sig->name ? sig->name : "unknown",
+		       ellipsis_text(n, sig->name ? sig->name : "unknown",
 				       sizeof(n)),
-		       ellipsis_purify(e, sig->email ? sig->email : "unknown",
+		       ellipsis_text(e, sig->email ? sig->email : "unknown",
 				       sizeof(e)));
 
 	if (tmr) {

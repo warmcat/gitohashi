@@ -147,6 +147,11 @@ job_search_check_indexed(struct jg2_ctx *ctx, uint32_t *files, uint32_t *done)
 	if (!ctx->jrepo)
 		return 1;
 
+	/* if the vhost has no cache dir configured, we have no index */
+
+	if (!ctx->vhost->cachedir || !ctx->vhost->cachedir->dcs)
+		return LWS_DISKCACHE_QUERY_NO_CACHE;
+
 	pthread_mutex_lock(&ctx->vhost->lock); /* ================ vhost lock */
 	__jg2_job_compute_cache_hash(ctx, JG2_JOB_SEARCH_TRIE, 1, hex);
 	ongoing = ctx->jrepo->indexing_list;

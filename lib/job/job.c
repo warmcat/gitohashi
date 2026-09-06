@@ -602,7 +602,8 @@ meta_header(struct jg2_ctx *ctx)
 
 	if (ctx->sr.e[JG2_PE_NAME])
 		CTX_BUF_APPEND("\"reponame\":\"%s\",\n",
-				ctx->sr.e[JG2_PE_NAME]);
+				ellipsis_purify(pure, ctx->sr.e[JG2_PE_NAME],
+						sizeof(pure)));
 
 	pthread_mutex_lock(&rd->lock); /* ====================== repodir lock */
 
