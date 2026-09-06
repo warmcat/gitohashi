@@ -456,6 +456,12 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 			break;;
 		}
 		/*
+		 * the vhd is going away with the vhost... stop the 1s
+		 * dump_cb reschedule cycle or it will fire on freed memory
+		 * if the context outlives the vhost (plugin case)
+		 */
+		lws_sul_cancel(&vhd->sul);
+		/*
 		 * A worker still inside jg2_ctx_fill() is walking
 		 * ctx->vhost, and the threadpool done-queue reap destroys
 		 * each task's jg2_ctx, which locks vhost->lock.  The
