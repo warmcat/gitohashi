@@ -455,9 +455,17 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 			lwsl_err("%s: NULL vhd\n", __func__);
 			break;;
 		}
-		jg2_vhost_destroy(vhd->jg2_vhost);
+		/*
+		 * A worker still inside jg2_ctx_fill() is walking
+		 * ctx->vhost, and the threadpool done-queue reap destroys
+		 * each task's jg2_ctx, which locks vhost->lock.  The
+		 * threadpool destroy joins the workers and runs those
+		 * cleanups, so it has to complete while the vhost is still
+		 * alive -- only then can the vhost itself go away.
+		 */
 		lws_threadpool_finish(vhd->tp);
 		lws_threadpool_destroy(vhd->tp);
+		jg2_vhost_destroy(vhd->jg2_vhost);
 		vhd->jg2_vhost = NULL;
 		break;
 
