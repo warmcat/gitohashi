@@ -444,9 +444,9 @@ struct jg2_ctx {
 	unsigned int sealed_items:1;
 
 	unsigned int indexing:1;
+	unsigned int extending:1; /**< search: extent walk still in progress */
 	unsigned int index_open_ro:1;
 	unsigned int no_rider:1;
-	unsigned int onetime:1;
 	unsigned int diff_open:1; /**< job_commit: the "diff" string is open */
 };
 
