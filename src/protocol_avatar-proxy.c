@@ -99,6 +99,10 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 	if (r->fd < 0) {
 		lwsl_err("%s: unable to open %s: errno %d\n", __func__,
 				r->filepath, errno);
+		/* r isn't on any list... don't leak it */
+		lws_dll2_remove(&r->next);
+		free(r);
+
 		return 1;
 	}
 
@@ -109,7 +113,19 @@ __create_waiting_client_request(struct vhd_avatar_proxy *vhd, struct req *r)
 
 	puri = lws_parse_uri_create(vhd->remote_base);
 	if (!puri) {
-		lwsl_notice("%s: parse uri %s: failed\n", __func__, vhd->remote_base);
+		lwsl_notice("%s: parse uri %s: failed\n", __func__,
+				vhd->remote_base);
+		/*
+		 * the caller unlinked us from owner_waiting and we never got
+		 * onto vhd->owner... clean up like the connect-failure leg
+		 * below or the req (open fd + created temp) is orphaned
+		 */
+		close(r->fd);
+		r->fd = -1;
+		unlink(r->filepath_temp);
+		lws_dll2_remove(&r->next);
+		free(r);
+
 		return 1;
 	}
 	if (!strcmp(puri->scheme, "https"))
@@ -317,6 +333,35 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
 			return -1;
 		if (lws_pvo_get_str(in, "cache-dir", &vhd->cache_dir))
 			return -1;
+
+		/*
+		 * Validate the remote base once here rather than discovering
+		 * breakage per-request... an unparseable base would otherwise
+		 * orphan every mention()'s req (open temp fd on no list)
+		 */
+		{
+			lws_parse_uri_t *puri;
+
+			puri = lws_parse_uri_create(vhd->remote_base);
+			if (!puri) {
+				lwsl_err("%s: remote-base \"%s\" unparseable\n",
+					 __func__, vhd->remote_base);
+
+				return -1;
+			}
+
+			if (strcmp(puri->scheme, "http") &&
+			    strcmp(puri->scheme, "https")) {
+				lwsl_err("%s: remote-base scheme \"%s\" not "
+					 "http/https\n", __func__,
+					 puri->scheme);
+				lws_parse_uri_destroy(&puri);
+
+				return -1;
+			}
+
+			lws_parse_uri_destroy(&puri);
+		}
 
 		/*
 		 * Assumes gitohashi or package install set up the cache
