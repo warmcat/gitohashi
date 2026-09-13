@@ -45,13 +45,14 @@ remove_ongoing(struct jg2_ctx *ctx)
 	pthread_mutex_lock(&ctx->vhost->lock); /* ======== vhost lock */
 
 	if (ctx->ongoing) {
+		struct ongoing_index *o = ctx->ongoing;
+
 		pon = &ctx->jrepo->indexing_list;
 		while (*pon) {
-			if (*pon == ctx->ongoing) {
-				*pon = ctx->ongoing->next;
-				lwsl_err("---------- ongoing free %p\n", ctx->ongoing);
+			if (*pon == o) {
+				*pon = o->next;
 				ctx->ongoing = NULL;
-				free(ctx->ongoing);
+				free(o);
 				break;
 			}
 			pon = &(*pon)->next;
