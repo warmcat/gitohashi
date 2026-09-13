@@ -131,9 +131,14 @@
 		"avatar-proxy": {
 			"remote-base": "https://www.gravatar.com/avatar/",
 			#
-			# this dir is served via avatar-proxy
+			# this dir is served via the avatar-proxy mount WITHOUT
+			# any ACL checks, so it must NOT be the same dir as the
+			# gitohashi "cache-base" above: sharing them would let
+			# unauthenticated clients fetch raw JSON cache entries
+			# (and defeat per-vhost repo ACLs for repos that are
+			# public on some other vhost sharing the dir)
 			#
-			"cache-dir": "/var/cache/libjsongit2"
+			"cache-dir": "/var/cache/gitohashi-avatar"
 		}}
 		]
 		}
