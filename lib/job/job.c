@@ -482,7 +482,14 @@ timeval_us(struct timeval *t)
 static void
 cache_write_complete(struct jg2_ctx *ctx)
 {
-	char final_name[128], *p;
+	/*
+	 * The final name is ctx->cache up to the '~'... cache bases up to
+	 * JG2_CACHE_BASE_MAX (256) chars are accepted, which with the on-disk
+	 * structure overhead gives final names longer than 128 bytes.  Size
+	 * the buffer for the whole cache path so accepted bases cannot
+	 * overflow it.
+	 */
+	char final_name[sizeof(ctx->cache)], *p;
 
 	close(ctx->fd_cache);
 	ctx->fd_cache = -1;
