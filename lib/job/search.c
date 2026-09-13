@@ -619,11 +619,20 @@ job_search(struct jg2_ctx *ctx)
 
 	if (ctx->ac) {
 		while (ctx->ac && JG2_HAS_SPACE(ctx, 512)) {
+			char pure[256];
+
+			/*
+			 * The autocomplete token comes from indexed file
+			 * contents, so it is repo-controlled... purify it
+			 * before it goes into the JSON
+			 */
 
 			CTX_BUF_APPEND("%c\n{ \"ac\": \"%s\", "
 				       "\"matches\": %d, \"agg\": %d",
 				       ctx->subsequent ? ',' : ' ',
-				       ((char *)(ctx->ac + 1)),
+				       ellipsis_purify(pure,
+						(char *)(ctx->ac + 1),
+						sizeof(pure)),
 				       ctx->ac->instances,
 				       ctx->ac->agg_instances);
 
@@ -656,12 +665,20 @@ job_search(struct jg2_ctx *ctx)
 
 	if (ctx->fp) {
 		while (ctx->fp && JG2_HAS_SPACE(ctx, 512)) {
+			char pure[512];
+
+			/*
+			 * as the ac loop above, the filepath comes from
+			 * repo-controlled tree entry names
+			 */
 
 			CTX_BUF_APPEND("%c\n{ \"fp\": \"%s\", "
 				       "\"matches\": %d, \"lines\": %d }",
 				       ctx->subsequent ? ',' : ' ',
-				       ((char *)(ctx->fp + 1)) +
-						       ctx->fp->matches_length,
+				       ellipsis_purify(pure,
+					((char *)(ctx->fp + 1)) +
+						ctx->fp->matches_length,
+					sizeof(pure)),
 				       ctx->fp->matches,
 				       ctx->fp->lines_in_file);
 
