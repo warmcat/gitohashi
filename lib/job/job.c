@@ -817,6 +817,16 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 	switch (ctx->html_state) {
 
 	case HTML_STATE_HTML_META:
+		/*
+		 * The template may have been hot-reloaded (shorter) since
+		 * this sandwich started, leaving our persisted html_pos
+		 * beyond the current marker offset... the unsigned length
+		 * computation would wrap and memcpy from beyond the template
+		 * buffer into the response.  If that happened, skip forward
+		 * to the new offset, emitting nothing for the vanished part.
+		 */
+		if (ctx->html_pos > ctx->vhost->meta)
+			ctx->html_pos = ctx->vhost->meta;
 		m = ctx->vhost->meta - ctx->html_pos > left ?
 		    left : ctx->vhost->meta - ctx->html_pos;
 		memcpy(ctx->p, ctx->vhost->html_content + ctx->html_pos, m);
@@ -850,6 +860,9 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 		/* fallthru */
 
 	case HTML_STATE_HTML_HEADER:
+		/* as HTML_STATE_HTML_META above */
+		if (ctx->html_pos > ctx->vhost->dynamic)
+			ctx->html_pos = ctx->vhost->dynamic;
 		m = ctx->vhost->dynamic - ctx->html_pos > left ?
 		    left : ctx->vhost->dynamic - ctx->html_pos;
 		memcpy(ctx->p, ctx->vhost->html_content + ctx->html_pos, m);
@@ -1080,6 +1093,9 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 	case HTML_STATE_HTML_TRAILER:
 		// lwsl_err("HTML_STATE_HTML_TRAILER\n");
 		left = lws_ptr_diff(ctx->end, ctx->p);
+		/* as HTML_STATE_HTML_META above */
+		if (ctx->html_pos > ctx->vhost->html_len)
+			ctx->html_pos = ctx->vhost->html_len;
 		m = ctx->vhost->html_len - ctx->html_pos > left ?
 		    left : ctx->vhost->html_len - ctx->html_pos;
 		memcpy(ctx->p, ctx->vhost->html_content + ctx->html_pos, m);
