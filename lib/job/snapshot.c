@@ -334,6 +334,21 @@ job_snapshot_destroy(struct jg2_ctx *ctx)
 		ctx->u.obj = NULL;
 	}
 
+#if defined(JG2_HAVE_ARCHIVE_H)
+	/*
+	 * Aborted snapshots (client closed the connection mid-download)
+	 * arrive here with the archive writer and its filter state still
+	 * allocated... the completion and error_out paths already freed
+	 * and NULLed ctx->a, this catches the destroy path so repeated
+	 * truncated downloads can't leak it
+	 */
+	if (ctx->a) {
+		archive_write_close(ctx->a);
+		archive_write_free(ctx->a);
+		ctx->a = NULL;
+	}
+#endif
+
 	lwsac_free(&ctx->lwsac_head);
 
 	ctx->job = NULL;
@@ -603,6 +618,7 @@ error_out:
 
 	archive_write_close(ctx->a);
 	archive_write_free(ctx->a);
+	ctx->a = NULL; /* job_snapshot_destroy checks for it */
 
 	ctx->final = 1;
 	job_snapshot_destroy(ctx);
