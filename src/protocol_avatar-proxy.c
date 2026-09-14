@@ -479,20 +479,38 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
 
 		/*
 		 * The avatar cache only ever contains files named by their
-		 * 32-char MD5 hex digest (see mention() -> lws_snprintf in
-		 * this file, and lib/main.c md5_to_hex_cstr()).  The URL tail
-		 * we receive here is untrusted (lws does not normalize it), so
-		 * a request like "/git/avatar/../../etc/passwd" would otherwise
-		 * be assembled into "<cache_dir>/./../etc/passwd" and served
-		 * via lws_serve_http_file().  Reject anything that is not a
-		 * clean hex filename.
+		 * 32-char MD5 hex digest plus "_avatar" (see mention() ->
+		 * lws_snprintf in this file, and lib/main.c
+		 * md5_to_hex_cstr()).  The URL tail we receive here is
+		 * untrusted (lws does not normalize it), so a request like
+		 * "/git/avatar/../../etc/passwd" would otherwise be assembled
+		 * into "<cache_dir>/./../etc/passwd" and served via
+		 * lws_serve_http_file().
+		 *
+		 * Accept only the exact avatar filename shape.  This also
+		 * prevents the mount serving anything else that might live in
+		 * a misconfigured shared cache dir, eg raw JSON cache entries
+		 * (shape-identical <32hex>-suffix names) if cache-dir is
+		 * pointed at the gitohashi cache-base.
 		 */
+		{
+			size_t tl = strlen(p), n;
 
-		if (strchr(p, '/') || strstr(p, "..")) {
-			lwsl_notice("%s: illegal avatar path \"%s\"\n",
-				    __func__, p);
+			if (tl != 32 + 7 || strncmp(p + 32, "_avatar", 7)) {
+				lwsl_notice("%s: illegal avatar path \"%s\"\n",
+					    __func__, p);
 
-			return -1;
+				return -1;
+			}
+
+			for (n = 0; n < 32; n++)
+				if ((p[n] < '0' || p[n] > '9') &&
+				    (p[n] < 'a' || p[n] > 'f')) {
+					lwsl_notice("%s: illegal avatar path "
+						    "\"%s\"\n", __func__, p);
+
+					return -1;
+				}
 		}
 
 		lws_snprintf(pss->path, sizeof(pss->path), "%s/%c/%c/%s",
