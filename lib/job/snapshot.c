@@ -484,6 +484,24 @@ job_snapshot(struct jg2_ctx *ctx)
 			continue;
 		}
 
+		/*
+		 * Crafted tree objects (plumbing push without fsck) can name
+		 * entries "." or ".."; walked verbatim these accumulate into
+		 * archive members that escape the extraction dir (tar-slip).
+		 * Git clients refuse to create them, so just skip them.
+		 */
+		{
+			const char *ten = git_tree_entry_name(te);
+
+			if (!strcmp(ten, ".") || !strcmp(ten, "..")) {
+				lwsl_notice("%s: skipping hostile entry "
+					    "\"%s\" in snapshot walk\n",
+					    __func__, ten);
+
+				continue;
+			}
+		}
+
 		switch (git_tree_entry_type(te)) {
 
 		case GIT_OBJ_TREE:
