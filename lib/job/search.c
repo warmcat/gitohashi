@@ -412,12 +412,21 @@ job_search_start(struct jg2_ctx *ctx)
 
 			free(lev->path);
 			lev->path = NULL;
-			if (lev->tree)
-				git_tree_free(lev->tree);
 			/*
 			 * libgit2 docs say don't free lev->tree... it seems it
 			 * is cached and removed by lru inside libgit2
+			 * UPDATE: This is incorrect. lookup creates a strong
+			 * reference that must be freed to avoid catastrophic leaks.
+			 *
+			 * The root tree at stack[0] is u.tree, an owned
+			 * reference the index walk below re-stashes and
+			 * job_search_destroy() frees through the stack.  Don't
+			 * decref it here, or the index walk dereferences (and
+			 * destroy double-frees) a pointer that only stays
+			 * valid by grace of libgit2's object cache.
 			 */
+			if (ctx->sp && lev->tree)
+				git_tree_free(lev->tree);
 			lev->tree = NULL;
 			lev->index = 0;
 
@@ -712,9 +721,12 @@ index:
 			free(lev->path);
 			lev->path = NULL;
 			/*
-			 * libgit2 docs say don't free lev->tree... it seems it
-			 * is cached and removed by lru inside libgit2
+			 * lookup creates a strong reference that must be freed
+			 * to avoid leaks... job_search_destroy() frees whatever
+			 * is still on the stack
 			 */
+			if (lev->tree)
+				git_tree_free(lev->tree);
 			lev->tree = NULL;
 			lev->index = 0;
 
