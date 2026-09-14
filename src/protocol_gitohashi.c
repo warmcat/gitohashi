@@ -588,17 +588,29 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 		 * commit lookups) and every buffer it produces needs a
 		 * serialized round-trip through the single lws service thread
 		 * via LWS_TP_RETURN_SYNC.  Under a crawl, blame requests pile
-		 * up faster than they drain: every worker ends up parked in
-		 * the sync wait, the queue fills, and the pool deadlocks.
+		 * up faster than they drain: every worker ends up parked in the
+		 * sync wait, the queue fills, and the pool deadlocks.
 		 *
-		 * When the pool is already busy with blame-class work, shed
-		 * the new request with 503 instead of admitting it onto the
-		 * same jammed pool.  Shedding only happens when there is no
+		 * First-touch search is the other expensive class: an
+		 * unindexed repo makes the request walk the whole tree twice
+		 * and full-text index every whitelisted file, holding a worker
+		 * for the whole build (in bounded slices since the walks
+		 * yield, but still a long time in total).  An unauthenticated
+		 * client can force the index build of every hosted repo, so
+		 * treat search-family URLs as sheddable the same way.
+		 *
+		 * When the pool is already busy with these classes of work,
+		 * shed the new request with 503 instead of admitting it onto
+		 * the same jammed pool.  Shedding only happens when there is no
 		 * free worker and no queue headroom left, so a pool that can
 		 * still make progress keeps admitting requests.
 		 */
 
-		if (vhd->tp && strstr(priv->url, "/blame")) {
+		if (vhd->tp && (strstr(priv->url, "/blame") ||
+				strstr(priv->url, "/search") ||
+				strstr(priv->url, "/ac/") ||
+				strstr(priv->url, "/fp/") ||
+				strstr(priv->url, "search="))) {
 			int ongoing, possible, queue_depth;
 
 			lws_threadpool_diagnose(vhd->tp, &ongoing,

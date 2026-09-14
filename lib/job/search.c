@@ -32,6 +32,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+/*
+ * How many tree entries the extent and index walks process per
+ * job_search() call before returning to the threadpool worker (which
+ * re-enters us via ctx->partway).  Bounds each worker slice on huge
+ * repos so STOPPING is honoured promptly.
+ */
+#define JG2_SEARCH_WALK_SLICE 128
+
 static void
 remove_ongoing(struct jg2_ctx *ctx)
 {
@@ -185,11 +193,9 @@ static int
 job_search_start(struct jg2_ctx *ctx)
 {
 	struct ongoing_index *ongoing = NULL;
-	const git_tree_entry *te;
 	char pure[256], hex[33];
 	git_generic_ptr u;
 	git_commit *c;
-	struct wl *w;
 	git_oid oid;
 	int n;
 
@@ -231,7 +237,6 @@ job_search_start(struct jg2_ctx *ctx)
 
 	if (n == LWS_DISKCACHE_QUERY_CREATING) {
 		ongoing = malloc(sizeof(*ongoing));
-		lwsl_err("---------- ongoing alloc %p\n", ongoing);
 		if (ongoing) {
 			ongoing->started = time(NULL);
 			strcpy(ongoing->hash, hex);
@@ -244,35 +249,26 @@ job_search_start(struct jg2_ctx *ctx)
 			ctx->ongoing = ongoing;
 
 			/*
-			 * mark our task as wanting to continue independent
-			 * of the lifetime of the initial wsi
-			 */
-
-			if (ctx->outlive)
-				*ctx->outlive = 1;
-
-			ctx->onetime = 1;
-			if (!ctx->did_sat)
-				ctx->meta = 0;
-			ctx->no_rider = 1;
-			meta_header(ctx);
-			ctx->meta = 1;
-			ctx->meta_last_job = 1;
-			ctx->no_rider = 0;
-
-			/*
-			 * This "ongoing" result we ended up with cannot be
-			 * cached after all... it's a transient situation.
-			 *
-			 * Close and delete the temp cache file related to
-			 * it (this is not the cached index file... this is the
-			 * cached query response, currently "ongoing")
+			 * This result cannot be cached after all... the trie
+			 * is being created as part of producing it.  Close and
+			 * delete the temp cache file related to it (this is
+			 * not the trie index file... this is the cached query
+			 * response)
 			 */
 			close(ctx->fd_cache);
 			ctx->fd_cache = -1;
 			unlink(ctx->cache);
 
-			CTX_BUF_APPEND("{\"creating\":[");
+			/*
+			 * We don't answer with a "creating" stub and try to
+			 * continue in the background: the task is dequeued
+			 * when its HTTP transaction completes, so background
+			 * continuation doesn't survive the response.
+			 * Instead we build the trie first in bounded slices
+			 * (the client waits, other clients see "ongoing"),
+			 * then answer with the real results from the fresh
+			 * trie below.
+			 */
 		}
 	}
 
@@ -398,161 +394,18 @@ job_search_start(struct jg2_ctx *ctx)
 		goto bail;
 	ctx->stack[ctx->sp].index = 0;
 
-	/* compute the extent of the task first */
+	/*
+	 * Computing the extent of the tree and then indexing every
+	 * whitelisted file can take minutes on a large repo.  Both walks run
+	 * from job_search() in bounded slices so the task returns to the
+	 * threadpool worker at slice boundaries and can honour
+	 * LWS_TP_STATUS_STOPPING promptly, instead of pinning the worker for
+	 * the whole build.
+	 */
 
 	lwsl_notice("%s: computing the extent of the tree...\n", __func__);
 
-	do {
-		struct tree_iter_level *lev = &ctx->stack[ctx->sp];
-
-		te = git_tree_entry_byindex(lev->tree, lev->index++);
-		if (!te) {
-
-			/* this was the end of our current subtree... */
-
-			free(lev->path);
-			lev->path = NULL;
-			/*
-			 * libgit2 docs say don't free lev->tree... it seems it
-			 * is cached and removed by lru inside libgit2
-			 * UPDATE: This is incorrect. lookup creates a strong
-			 * reference that must be freed to avoid catastrophic leaks.
-			 *
-			 * The root tree at stack[0] is u.tree, an owned
-			 * reference the index walk below re-stashes and
-			 * job_search_destroy() frees through the stack.  Don't
-			 * decref it here, or the index walk dereferences (and
-			 * destroy double-frees) a pointer that only stays
-			 * valid by grace of libgit2's object cache.
-			 */
-			if (ctx->sp && lev->tree)
-				git_tree_free(lev->tree);
-			lev->tree = NULL;
-			lev->index = 0;
-
-			if (ctx->sp) {
-				/* let's go back up a level and continue... */
-				ctx->sp--;
-				continue;
-			}
-
-			/*
-			 * oh... we have finished the root tree...
-			 */
-			break;
-		}
-
-		switch (git_tree_entry_type(te)) {
-			char path[4096];
-			const char *ten;
-			int len;
-
-		case GIT_OBJ_TREE:
-
-			if (ctx->sp == LWS_ARRAY_SIZE(ctx->stack) - 1) {
-				lwsl_err("%s: too many dir levels %d\n",
-					 __func__, ctx->sp + 1);
-
-				goto bail;
-			}
-
-			lws_snprintf(path, sizeof(path), "%s%s/", lev->path,
-				     git_tree_entry_name(te));
-
-			lev = &ctx->stack[ctx->sp + 1];
-			if (git_tree_lookup(&lev->tree, ctx->jrepo->repo,
-					    git_tree_entry_id(te))) {
-				lwsl_err("%s: unable to get tree\n", __func__);
-
-				goto bail;
-			}
-
-			lev->path = strdup(path);
-			if (!lev->path)
-				goto bail;
-
-			lev->index = 0;
-
-			/* officially go down to the next level */
-			ctx->sp++;
-			break;
-
-		case GIT_OBJ_BLOB:
-
-			ten = git_tree_entry_name(te);
-			len = strlen(ten);
-
-			w = whitelist;
-			do {
-				const char *p;
-
-				if (len >= w->len &&
-				    ten[len - 1] == w->suff[w->len - 1]) {
-					p = &ten[len - w->len];
-
-					for (n = 0; n < w->len; n++)
-						if (*p++ != w->suff[n])
-							break;
-					if (n == w->len)
-						break;
-				}
-				w++;
-			} while (w->suff);
-
-			if (!w->suff)
-				continue;
-
-			if (ongoing) /* coverity */
-				ongoing->index_files_to_do++;
-			break;
-
-		default:
-			lwsl_err("%s: unexpected GIT_OBJ_ %d\n", __func__,
-					git_tree_entry_type(te));
-
-			goto bail;
-		}
-
-	} while (1);
-
-	{
-		int extent;
-
-		pthread_mutex_lock(&ctx->vhost->lock);
-		extent = ctx->ongoing->index_files_to_do;
-		pthread_mutex_unlock(&ctx->vhost->lock);
-
-		lwsl_notice("Task extent: %d files\n", extent);
-	}
-
-	/* get ready to walk the entire tree */
-
-	n = 0;
-	pure[n++] = '/';
-	pure[n] = '\0';
-
-	ctx->sp = 0;
-	ctx->stack[ctx->sp].tree = u.tree;
-	ctx->stack[ctx->sp].path = strdup(pure);
-	if (!ctx->stack[ctx->sp].path)
-		goto bail;
-	ctx->stack[ctx->sp].index = 0;
-
-	/* initialize the trie */
-
-	ctx->t = lws_fts_create(ctx->trie_fd);
-	if (!ctx->t) {
-		lwsl_err("%s: Unable to create the trie %d\n",
-			 __func__, ctx->trie_fd);
-		goto bail;
-	}
-
-	/*
-	 * we do the one-time setup, then enter the normal job flow
-	 * for the rest of the indexing action
-	 */
-
-	ctx->indexing = 1;
+	ctx->extending = 1;
 
 	return 0;
 
@@ -602,13 +455,8 @@ job_search(struct jg2_ctx *ctx)
 		return -1;
 	}
 
-	if (ctx->onetime) {
-		ctx->onetime = 0;
-		meta_trailer(ctx, "\n]");
-		job_search_destroy(ctx);
-		ctx->final = 2;
-		return 0;
-	}
+	if (ctx->extending)
+		goto extend;
 
 	if (ctx->indexing)
 		goto index;
@@ -706,13 +554,188 @@ job_search(struct jg2_ctx *ctx)
 
 	//return 0;
 
+extend:
+
+	/*
+	 * First walk the whole tree computing the extent of the task (how
+	 * many whitelisted files we will index).  This and the index walk
+	 * below are sliced: every JG2_SEARCH_WALK_SLICE entries we return 0,
+	 * the caller marks us partway and we resume here on the next call.
+	 * This keeps each threadpool slice bounded so STOPPING is seen
+	 * promptly on huge repos.
+	 */
+
+	{
+		int budget = JG2_SEARCH_WALK_SLICE;
+
+		do {
+			struct tree_iter_level *lev = &ctx->stack[ctx->sp];
+
+			/*
+			 * checked at the top so the whitelist-skip "continue"
+			 * paths can't make a slice unbounded
+			 */
+			if (!--budget)
+				return 0; /* resume the walk next call */
+
+			te = git_tree_entry_byindex(lev->tree, lev->index++);
+			if (!te) {
+
+				/* this was the end of our current subtree... */
+
+				free(lev->path);
+				lev->path = NULL;
+				/*
+				 * lookup creates a strong reference that must
+				 * be freed to avoid leaks.  The root tree at
+				 * stack[0] is the exception... the index walk
+				 * below continues from it and
+				 * job_search_destroy() frees it via the stack.
+				 */
+				if (ctx->sp) {
+					if (lev->tree)
+						git_tree_free(lev->tree);
+					lev->tree = NULL;
+				}
+				lev->index = 0;
+
+				if (ctx->sp) {
+					/* let's go back up a level and continue... */
+					ctx->sp--;
+					continue;
+				}
+
+				/*
+				 * oh... we have finished the root tree...
+				 *
+				 * don't clear stack[0].tree, it is the owned
+				 * root tree the index walk resumes from
+				 */
+				break;
+			}
+
+			switch (git_tree_entry_type(te)) {
+				char path[4096];
+				const char *ten;
+				int len;
+
+			case GIT_OBJ_TREE:
+
+				if (ctx->sp == LWS_ARRAY_SIZE(ctx->stack) - 1) {
+					lwsl_err("%s: too many dir levels %d\n",
+						 __func__, ctx->sp + 1);
+
+					goto bail;
+				}
+
+				lws_snprintf(path, sizeof(path), "%s%s/",
+					     lev->path, git_tree_entry_name(te));
+
+				lev = &ctx->stack[ctx->sp + 1];
+				if (git_tree_lookup(&lev->tree, ctx->jrepo->repo,
+						    git_tree_entry_id(te))) {
+					lwsl_err("%s: unable to get tree\n",
+						 __func__);
+
+					goto bail;
+				}
+
+				lev->path = strdup(path);
+				if (!lev->path)
+					goto bail;
+
+				lev->index = 0;
+
+				/* officially go down to the next level */
+				ctx->sp++;
+				break;
+
+			case GIT_OBJ_BLOB:
+
+				ten = git_tree_entry_name(te);
+				len = strlen(ten);
+
+				w = whitelist;
+				do {
+					const char *p;
+
+					if (len >= w->len &&
+					    ten[len - 1] == w->suff[w->len - 1]) {
+						p = &ten[len - w->len];
+
+						for (n = 0; n < w->len; n++)
+							if (*p++ != w->suff[n])
+								break;
+						if (n == w->len)
+							break;
+					}
+					w++;
+				} while (w->suff);
+
+				if (!w->suff)
+					continue;
+
+				if (ctx->ongoing)
+					ctx->ongoing->index_files_to_do++;
+				break;
+
+			default:
+				lwsl_err("%s: unexpected GIT_OBJ_ %d\n", __func__,
+						git_tree_entry_type(te));
+
+				goto bail;
+			}
+
+		} while (1);
+	}
+
+	if (ctx->ongoing) {
+		int extent;
+
+		pthread_mutex_lock(&ctx->vhost->lock);
+		extent = ctx->ongoing->index_files_to_do;
+		pthread_mutex_unlock(&ctx->vhost->lock);
+
+		lwsl_notice("Task extent: %d files\n", extent);
+	}
+
+	/* get ready to walk the entire tree again, indexing this time */
+
+	ctx->stack[0].path = strdup("/"); /* the old one was freed at root exhaustion */
+	if (!ctx->stack[0].path)
+		goto bail;
+	ctx->stack[0].index = 0;
+	/* ctx->stack[0].tree is still the owned root tree */
+
+	/* initialize the trie */
+
+	ctx->t = lws_fts_create(ctx->trie_fd);
+	if (!ctx->t) {
+		lwsl_err("%s: Unable to create the trie %d\n",
+			 __func__, ctx->trie_fd);
+		goto bail;
+	}
+
+	/*
+	 * we do the one-time setup, then enter the normal job flow
+	 * for the rest of the indexing action
+	 */
+
+	ctx->extending = 0;
+	ctx->indexing = 1;
+
+	/* fallthru */
+
 index:
 
 	do {
 		struct tree_iter_level *lev = &ctx->stack[ctx->sp];
-		int dr;
+		int dr, budget = JG2_SEARCH_WALK_SLICE;
 
-		lwsl_err("%s: ctx->sp %d\n", __func__, ctx->sp);
+		/* as the extent walk above */
+		if (!--budget)
+			return 0; /* resume the walk next call */
+
 		te = git_tree_entry_byindex(lev->tree, lev->index++);
 		if (!te) {
 
@@ -803,7 +826,8 @@ index:
 				continue;
 
 			pthread_mutex_lock(&ctx->vhost->lock);
-			ctx->ongoing->index_files_done++;
+			if (ctx->ongoing)
+				ctx->ongoing->index_files_done++;
 			pthread_mutex_unlock(&ctx->vhost->lock);
 
 			if (git_blob_lookup(&ctx->u.blob, ctx->jrepo->repo,
