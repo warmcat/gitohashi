@@ -838,21 +838,32 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 			break;
 
 		/*
-		CTX_BUF_APPEND("<meta name=\"Description\" content=\""
-			       "generated-by:gitohashi git web interface, "
-			       "repository: %s, mode: %s, path: %s, rev: %s\">",
-			       reponame ? reponame : "-", mode ? mode : "-",
-			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) ?
-			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) :
-				       "-", vid ? vid : "-");
-*/
-		CTX_BUF_APPEND("<meta name=\"Description\" content=\""
-			       "generated-by:gitohashi git web interface, "
-			       "repository: %s, mode: %s, path: %s, rev: %s\">",
-			       reponame ? reponame : "-", mode ? mode : "-",
-			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) ?
-			       jg2_ctx_get_path(ctx, JG2_PE_NAME, NULL, 0) :
-				       "-", vid ? vid : "-");
+		 * The repo name, mode, path and vid all come from the URL
+		 * and are attacker-controlled... unlike every other
+		 * emission here, purify them before they go into the HTML
+		 * attribute
+		 */
+		{
+			char pure[4][128];
+			const char *path = jg2_ctx_get_path(ctx, JG2_PE_PATH,
+							   NULL, 0);
+
+			CTX_BUF_APPEND("<meta name=\"Description\" content=\""
+				       "generated-by:gitohashi git web interface, "
+				       "repository: %s, mode: %s, path: %s, rev: %s\">",
+				       ellipsis_purify(pure[0],
+						       reponame ? reponame : "-",
+						       sizeof(pure[0])),
+				       ellipsis_purify(pure[1],
+						       mode ? mode : "-",
+						       sizeof(pure[1])),
+				       ellipsis_purify(pure[2],
+						       path ? path : "-",
+						       sizeof(pure[2])),
+				       ellipsis_purify(pure[3],
+						       vid ? vid : "-",
+						       sizeof(pure[3])));
+		}
 
 		ctx->html_pos += JG2_HTML_META_LEN;
 		ctx->html_state = HTML_STATE_HTML_HEADER;
