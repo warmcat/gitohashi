@@ -480,17 +480,23 @@ jg2_rei_string(const struct repo_entry_info *rei, enum rei_string_index n)
 {
 	const char *p = (const char *)(rei + 1);
 
+	/*
+	 * The config strings are packed contiguously after the name; an
+	 * absent entry has conf_len 0 and no bytes in the packing, so it
+	 * must read as NULL rather than as whatever follows it.
+	 */
+
 	if (n == REI_STRING_NAME)
 		return p;
 	p += rei->name_len;
 	if (n == REI_STRING_CONFIG_DESC)
-		return p;
+		return rei->conf_len[0] ? p : NULL;
 	p += rei->conf_len[0];
 	if (n == REI_STRING_CONFIG_OWNER)
-		return p;
+		return rei->conf_len[1] ? p : NULL;
 	p += rei->conf_len[1];
 	if (n == REI_STRING_CONFIG_URL)
-		return p;
+		return rei->conf_len[2] ? p : NULL;
 
 	return NULL;
 }
