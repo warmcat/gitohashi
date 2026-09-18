@@ -140,6 +140,8 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 
 		if (klen == 1 && key_start[0] == 'h') {
 			pp = strdup(p + 1);
+			/* a repeated key would otherwise orphan the earlier strdup */
+			free((char *)sr->e[JG2_PE_BRANCH]);
 			sr->e[JG2_PE_BRANCH] = (const char *)pp;
 			while (*pp) {
 				if (/* *pp != '_' && *pp != '-' && !isalnum(*pp) */ !*pp || *pp == '&') {
@@ -153,6 +155,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 		}
 		if (klen == 2 && !strncmp(key_start, "id", 2)) {/* id hex hash string*/
 			pp = strdup(p + 1);
+			free((char *)sr->e[JG2_PE_ID]);
 			sr->e[JG2_PE_ID] = (const char *)pp;
 
 			while (*pp) {
@@ -168,6 +171,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
 		}
 		if (klen == 1 && key_start[0] == 'q') {
 			pp =  strdup(p + 1);
+			free((char *)sr->e[JG2_PE_SEARCH]);
 			sr->e[JG2_PE_SEARCH] = (const char *)pp;
 			while (*pp) {
                                if (*pp != '_' && *pp != '-' && *pp != '.' && !isalnum(*pp)) {
