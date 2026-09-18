@@ -756,6 +756,18 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
 			}
 			priv->used = 0;
 
+			/*
+			 * PENDING_TIMEOUT_THREADPOOL_TASK is a one-shot sul
+			 * armed once after the headers: without re-arming it
+			 * here, any response whose generation + streaming
+			 * exceeds the initial budget is cut off mid-body even
+			 * though it is making steady progress.  Re-arm on each
+			 * successful chunk so the budget bounds inactivity
+			 * rather than total response time.
+			 */
+			lws_set_timeout(wsi, PENDING_TIMEOUT_THREADPOOL_TASK,
+					60);
+
 			if (priv->frametype == LWS_WRITE_HTTP_FINAL) {
 				lws_threadpool_task_sync(lws_threadpool_get_task_wsi(wsi), !priv->outlive);
 				goto transaction_completed;
