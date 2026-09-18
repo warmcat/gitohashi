@@ -233,11 +233,6 @@ job_blog(struct jg2_ctx *ctx)
 	lwsl_notice("%s: entering loop, ctx->tei=%p\n", __func__, ctx->tei);
 
 	while (ctx->tei) {
-		if (!JG2_HAS_SPACE(ctx, 2500)) {
-			lwsl_notice("%s: JG2_HAS_SPACE failed (space needed 2500)\n", __func__);
-			break;
-		}
-
 		const char *path = (const char *)(ctx->tei + 1);
 		lwsl_notice("%s: processing %s\n", __func__, path);
 		
@@ -373,6 +368,22 @@ job_blog(struct jg2_ctx *ctx)
 		jg2_json_purify(pure_summary, summary, sizeof(pure_summary), NULL);
 		jg2_json_purify(pure_image, image_route, sizeof(pure_image), NULL);
 		jg2_json_purify(pure_path, path, sizeof(pure_path), NULL);
+
+		/*
+		 * The purified fields can total ~3.6k (2048 summary + 3 x 512
+		 * + format overhead); the old fixed 2500 reserve let a big
+		 * item start in a buffer with [2700, 3644) free and get
+		 * clamped mid-JSON, corrupting the (cached) response.  Size
+		 * the check to the item we are actually about to emit, so an
+		 * item that does not fit is held for the next fill instead.
+		 */
+		if (!JG2_HAS_SPACE(ctx, (int)(strlen(pure_path) +
+					 strlen(pure_title) +
+					 strlen(pure_summary) +
+					 strlen(pure_image)) + 160)) {
+			lwsl_notice("%s: JG2_HAS_SPACE failed\n", __func__);
+			break;
+		}
 
 		lwsl_notice("%s: Appending JSON chunk for %s\n", __func__, path);
 		CTX_BUF_APPEND("%c\n{ \"name\": \"%s\",",
