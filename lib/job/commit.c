@@ -42,6 +42,18 @@ common_print_cb(struct jg2_ctx *ctx, int origin,
         	break;
         }
 
+	/*
+	 * The staged patch is repo content; without a cap a crafted
+	 * huge-text diff takes unbounded per-request memory.  Past the cap,
+	 * consume the rest silently and mark the truncation.
+	 */
+	if (ctx->staged_diff >= JG2_MAX_STAGED_DIFF) {
+		ctx->diff_truncated = 1;
+
+		return 0;
+	}
+	ctx->staged_diff += u + 4;
+
 	p = lwsac_use(&ctx->lwsac_head, u + 4, 0);
 	if (!p)
 		return -1;
@@ -199,6 +211,11 @@ job_commit_start(struct jg2_ctx *ctx)
 		goto bail;
 	}
 #endif
+	if (ctx->diff_truncated)
+		/* make the tail-loss visible in the output rather than silent */
+		common_print_cb(ctx, GIT_DIFF_LINE_CONTEXT,
+				"\n... diff truncated ...\n", 24);
+
 	ctx->lac = ctx->lwsac_head;
 	ctx->pos = 0;
 	ctx->size = 0;

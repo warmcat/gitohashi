@@ -67,6 +67,18 @@ treewalk_cb(const char *root, const git_tree_entry *entry, void *payload)
 	name = git_tree_entry_name(entry);
 	m = strlen(name) + 1;
 
+	/*
+	 * The listing is repo content: past the entry cap, stop collecting
+	 * (returning 1 also stops further subtrees being descended into)
+	 * and let the emitter show a truncation marker.
+	 */
+	if (ctx->listing_entries == JG2_MAX_LIST_ENTRIES) {
+		ctx->listing_truncated = 1;
+
+		return 1;
+	}
+	ctx->listing_entries++;
+
 	tei = lwsac_use(&ctx->lwsac_head, sizeof(*tei) + m, 0);
 	if (!tei) {
 		lwsl_err("OOM\n");
@@ -494,6 +506,9 @@ job_tree(struct jg2_ctx *ctx)
 
 		if (ctx->tei)
 			continue;
+
+		if (ctx->listing_truncated)
+			CTX_BUF_APPEND(",\n{ \"name\": \"... truncated ...\"}");
 
 		meta_trailer(ctx, "]");
 		job_tree_destroy(ctx);

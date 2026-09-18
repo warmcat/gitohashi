@@ -74,6 +74,18 @@ treewalk_cb_blog(const char *root, const git_tree_entry *entry, void *payload)
 	rlen = strlen(root);
 	nlen = strlen(name);
 
+	/*
+	 * The collected posts are repo content: past the entry cap, stop
+	 * collecting (returning 1 also skips further YYYY/MM/DD subtrees)
+	 * and let the emitter show a truncation marker.
+	 */
+	if (ctx->listing_entries == JG2_MAX_LIST_ENTRIES) {
+		ctx->listing_truncated = 1;
+
+		return 1;
+	}
+	ctx->listing_entries++;
+
 	if (type == GIT_OBJ_TREE) {
 		if (rlen == 0) { /* year */
 			if (nlen == 4 && is_all_digits(name, 4)) {
@@ -399,6 +411,10 @@ job_blog(struct jg2_ctx *ctx)
 
 	if (!ctx->tei) {
 		lwsl_notice("%s: completed iterating all blog items\n", __func__);
+		if (ctx->listing_truncated)
+			CTX_BUF_APPEND("%c\n{ \"name\": \"\","
+				       "\"title\": \"... truncated ...\"}",
+				       ctx->subsequent ? ',' : ' ');
 		meta_trailer(ctx, "\n]");
 		job_blog_destroy(ctx);
 		ctx->meta_last_job = 1;

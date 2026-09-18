@@ -127,6 +127,15 @@ struct jg2_rei_gen; /* conf/private.h references it in a prototype */
  * The jobs act to reserve this amount of buffer.
  */
 #define JG2_RESERVE_SEAL 200
+/*
+ * Cap on entries collected from repo content into the ctx lwsac by the
+ * tree and blog walks, and on the staged patch text kept by job_commit.
+ * Repo content is pusher-controlled, so without these a crafted repo
+ * (millions of entries, a huge-text diff) could take unbounded per-request
+ * memory; past the cap the walk stops and a truncation marker is emitted.
+ */
+#define JG2_MAX_LIST_ENTRIES 50000
+#define JG2_MAX_STAGED_DIFF (8 * 1024 * 1024)
 #define JG2_HAS_SPACE(ctx, num) (lws_ptr_diff(ctx->end, ctx->p) > \
 				 JG2_RESERVE_SEAL + num)
 
@@ -383,6 +392,8 @@ struct jg2_ctx {
 	char alang[128]; /**< accept-language string, or NUL */
 	char status[256];
 	int count;
+	unsigned int listing_entries; /**< tree/blog walk entries collected */
+	size_t staged_diff; /**< job_commit: patch bytes staged into lwsac */
 	int flags;
 	char *outlive;
 
@@ -496,6 +507,8 @@ struct jg2_ctx {
 	unsigned int blog_mode:1;
 	unsigned int bot:1;
 	unsigned int failed_in_start:1;
+	unsigned int listing_truncated:1; /**< tree/blog entry cap reached */
+	unsigned int diff_truncated:1; /**< job_commit staged-diff cap reached */
 	unsigned int sealed_items:1;
 
 	unsigned int indexing:1;
