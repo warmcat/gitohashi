@@ -53,6 +53,13 @@ __jg2_cache_query_v(struct jg2_ctx *ctx, int flags, const char *suffix,
 	jg2_md5_context md5_ctx;
 	unsigned char md5[JG2_MD5_LEN];
 
+	if (!ctx->vhost->cachedir)
+		/*
+		 * caching is not configured for this vhost... there's
+		 * nothing we can query
+		 */
+		return LWS_DISKCACHE_QUERY_NO_CACHE;
+
 	if (suffix)
 		l = strlen(suffix);
 
