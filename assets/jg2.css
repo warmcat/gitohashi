@@ -1368,3 +1368,31 @@ td.doc blockquote, div.blog-article-content blockquote {
 	padding: 0 12px;
 	color: #666;
 }
+
+/* ----------------------------------------------------------------------
+ * Server-side syntax highlighting (lws streaming tokenizer)
+ *
+ * The lws-hl html sink wraps tokens in these stock class names; colors are
+ * github-palette to match the rest of the theme.  Diff classes colour whole
+ * added / removed / hunk / metadata lines.
+ */
+
+span.hl-k  { color: #d73a49; }                          /* keyword */
+span.hl-t  { color: #6f42c1; }                          /* type */
+span.hl-n  { color: #005cc5; }                          /* number */
+span.hl-s  { color: #032f62; }                          /* string */
+span.hl-ch { color: #032f62; }                          /* char literal */
+span.hl-cm { color: #6a737d; font-style: italic; }      /* comment */
+span.hl-pp { color: #d73a49; }                          /* preproc */
+
+span.hl-da { color: #22863a; background-color: #f0fff4; } /* diff added */
+span.hl-dr { color: #b31d28; background-color: #ffeef0; } /* diff removed */
+span.hl-dh { color: #005cc5; background-color: #f1f8ff; } /* diff hunk hdr */
+span.hl-dm { color: #6a737d; }                          /* diff metadata */
+
+/* keep diff line backgrounds on the line's whole width */
+
+code.diff span.hl-da, code.diff span.hl-dr, code.diff span.hl-dh {
+	display: inline;
+	border-radius: 2px;
+}

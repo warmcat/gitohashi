@@ -62,8 +62,11 @@
  * Bumped to 3 when the cached content for HTML contexts changed from JSON to
  * server-rendered HTML (and the Accept-Language entered the key), so stale
  * JSON entries from older builds are not served as HTML.
+ *
+ * Bumped to 4 when server-side syntax highlighting was integrated, since the
+ * rendered content for code / blame / commit views changed shape.
  */
-#define JG2_JSON_EPOCH 3
+#define JG2_JSON_EPOCH 4
 
 /*
  * Maximum cache base path length we will accept at vhost creation.

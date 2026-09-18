@@ -27,8 +27,9 @@ https://warmcat.com/git .
 
  - Server-side rendering: pages are complete HTML direct from the server,
    no client JS needed.  The job pipeline still produces JSON internally,
-     but it is rendered to HTML server-side (with server-side markdown
-     and i18n) before it is cached and served.  Bots, text browsers and
+     but it is rendered to HTML server-side (with server-side markdown,
+     i18n and lws streaming syntax highlighting for C sources and commit
+     diffs) before it is cached and served.  Bots, text browsers and
      JS-disabled browsers get the full site.  Client JS is optional
      enhancement only.
 
@@ -166,10 +167,9 @@ gitohashi installs its `./assets` directory into
 asset|function
 ---|---
 inconsolata.ttf|Web font for nice monospaced content
-jg2.css|CSS for the server-rendered page markup
+jg2.css|CSS for the server-rendered page markup, including the syntax highlighting token colors
 logo.css|CSS SVG Image included by the example template HTML
 gitohashi-custom.css|CSS overrides related to the custom HTML template (normally served from wherever the HTML template is served from)
-github.css|CSS for syntax highlighting output (for when a highlighting solution is added)
 
 Gitohashi also installs an example html template from its `./templates` dir,
 `gitohashi-example.html` into `/usr/local/share/gitohashi/templates.  This is

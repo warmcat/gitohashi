@@ -42,6 +42,142 @@
 #include <sys/time.h>
 
 /*
+ * lws-hl.h arrives via the libwebsockets.h umbrella on lws versions that
+ * have the highlighter; LWS_WITH_HL from lws_config.h tells us it is there.
+ */
+
+/*
+ * Server-side syntax highlighting (lws streaming tokenizer, hostile-input
+ * hardened, alloc-free).  Applied to C sources in file and blame views and
+ * to commit diffs; the markup is part of the cached HTML.  Naked modes
+ * (plain/patch) stay unhighlighted by design.  Without LWS_WITH_HL the
+ * emission falls back to plain escaping.
+ */
+
+#if defined(LWS_WITH_HL)
+
+struct hl_sink {
+	struct jg2_hbuf *h;
+	char fail;
+};
+
+static lws_stateful_ret_t
+hl_write_cb(void *user, const uint8_t *buf, size_t len)
+{
+	struct hl_sink *s = (struct hl_sink *)user;
+
+	if (jg2_hbuf_append(s->h, (const char *)buf, len)) {
+		s->fail = 1;
+
+		return LWS_SRET_FATAL;
+	}
+
+	return LWS_SRET_OK;
+}
+
+/*
+ * Feed src[0..len) through a fresh tokenizer of the given language and emit
+ * the stock html markup sink output into h.  The sink escapes everything, so
+ * this is safe on arbitrary bytes.  Returns 0 for OK.
+ */
+
+static int
+hl_emit(struct jg2_hbuf *h, const lws_hl_ops_t *lang, const char *src,
+	size_t len)
+{
+	lws_hl_ctx_t ctx;
+	lws_hl_html_t html;
+	struct hl_sink s;
+	const uint8_t *p = (const uint8_t *)src;
+	size_t l = len;
+
+	s.h = h;
+	s.fail = 0;
+
+	if (lws_hl_html_construct(&html, hl_write_cb, &s, NULL) ||
+	    lws_hl_construct(&ctx, lang, lws_hl_html_token, &html))
+		return 1;
+
+	while (l && !s.fail) {
+		size_t was = l;
+
+		if (lws_hl_parse(&ctx, &p, &l))
+			break;	/* sink failure (never defers) */
+		if (l == was)
+			break;	/* held decision byte, finish resolves */
+	}
+
+	if (!s.fail && lws_hl_finish(&ctx))
+		s.fail = 1;
+	if (!s.fail && lws_hl_html_close(&html))
+		s.fail = 1;
+
+	return s.fail;
+}
+
+/* language pick for a filename: NULL = no highlighting */
+
+static const lws_hl_ops_t *
+hl_lang_for(const char *name)
+{
+	size_t n;
+
+	if (!name)
+		return NULL;
+
+	n = strlen(name);
+
+#define hl_ends_with(_s) (n > sizeof(_s) - 1 && \
+			  !strcmp(name + n - (sizeof(_s) - 1), _s))
+
+#if defined(LWS_WITH_HL_LANG_C)
+	if (hl_ends_with(".c") || hl_ends_with(".h") ||
+	    hl_ends_with(".cc") || hl_ends_with(".cpp") ||
+	    hl_ends_with(".hpp"))
+		return lws_hl_lang_c();
+#endif
+
+#undef hl_ends_with
+
+	return NULL;
+}
+
+/*
+ * Highlight a whole source buffer chosen by filename.  Returns 0 if markup
+ * was emitted, nonzero if the caller should fall back to plain escaping.
+ */
+
+static int
+hl_emit_file(struct jg2_hbuf *h, const char *name, const char *src, size_t len)
+{
+	const lws_hl_ops_t *lang = hl_lang_for(name);
+
+	if (!lang)
+		return 1;
+
+	return hl_emit(h, lang, src, len);
+}
+
+#if defined(LWS_WITH_HL_LANG_DIFF)
+#define JG2_HAVE_HL_DIFF 1
+#endif
+
+#else /* ! LWS_WITH_HL */
+
+static int
+hl_emit_file(struct jg2_hbuf *h, const char *name, const char *src, size_t len)
+{
+	(void)h;
+	(void)name;
+	(void)src;
+	(void)len;
+
+	return 1;
+}
+
+#endif
+
+/*
  * The internal capture is bounded by this; beyond it we stop capturing and
  * render a "too large" notice instead.  Pages in the multi-megabyte class
  * are pathological for a web view anyway and /plain/ exists for fetching.
@@ -1177,9 +1313,24 @@ render_commit(struct jg2_srr *r, const struct jg2_jn *item)
 
 	if (diff) {
 		if (HAP(r, "<div><pre><main role='main'>"
-			  "<code id='do-hljs' class=\"diff\">") ||
-		    ssr_esc(r, diff) ||
-		    HAP(r, "</code></main></pre></div>"))
+			  "<code id='do-hljs' class=\"diff\">"))
+			return 1;
+
+		/*
+		 * Diff markup highlighting (adds / removes / hunks / file
+		 * metadata lines) server-side; falls back to escaped text.
+		 */
+
+#if defined(JG2_HAVE_HL_DIFF)
+		if (hl_emit(r->h, lws_hl_lang_diff(), diff, strlen(diff)) &&
+		    ssr_esc(r, diff))
+			return 1;
+#else
+		if (ssr_esc(r, diff))
+			return 1;
+#endif
+
+		if (HAP(r, "</code></main></pre></div>"))
 			return 1;
 	}
 
@@ -1303,13 +1454,29 @@ blamemap_hunk(const struct jg2_jn *blame, int idx1)
 
 static int
 emit_code_blamed(struct jg2_srr *r, const char *blob, size_t len,
-		 const struct jg2_blamemap *bm)
+		 const struct jg2_blamemap *bm, const char *blobname)
 {
 	size_t pos = 0, gstart = 0, lineno = 0;
 	int cur = -1;
 
-	if (!bm->line2hunk)
-		return ssr_esc_len(r, blob, len);
+#if defined(LWS_WITH_HL)
+	lws_hl_ctx_t hlctx;
+	lws_hl_html_t hlhtml;
+	struct hl_sink hls;
+	const lws_hl_ops_t *lang = hl_lang_for(blobname);
+	int hl_ok = 0;
+
+	if (lang) {
+		hls.h = r->h;
+		hls.fail = 0;
+
+		if (!lws_hl_html_construct(&hlhtml, hl_write_cb, &hls,
+					   NULL) &&
+		    !lws_hl_construct(&hlctx, lang, lws_hl_html_token,
+				      &hlhtml))
+			hl_ok = 1;
+	}
+#endif
 
 	while (pos <= len) {
 		size_t le = pos;
@@ -1358,16 +1525,40 @@ emit_code_blamed(struct jg2_srr *r, const char *blob, size_t len,
 				    ssr_esc_attr(r, lg) ||
 				    HAP(r, "\">"))
 					return 1;
+			}
 
+			/*
+			 * The group text: highlighted through the
+			 * persistent tokenizer when possible (the groups
+			 * partition the file, so the tokenizer sees exactly
+			 * the original byte stream), else escaped.
+			 */
+
+#if defined(LWS_WITH_HL)
+			if (hl_ok) {
+				const uint8_t *hp = (const uint8_t *)(blob + gstart);
+				size_t hl = gend - gstart;
+
+				while (hl && !hls.fail) {
+					size_t was = hl;
+
+					if (lws_hl_parse(&hlctx, &hp, &hl))
+						break;
+					if (hl == was)
+						break;
+				}
+				if (hls.fail)
+					return 1;
+			} else
+#endif
+			{
 				if (ssr_esc_len(r, blob + gstart,
 						gend - gstart))
 					return 1;
+			}
 
+			if (cur > 0 && blamemap_hunk(bm->hunks, cur)) {
 				if (HAP(r, "</span>"))
-					return 1;
-			} else {
-				if (ssr_esc_len(r, blob + gstart,
-						gend - gstart))
 					return 1;
 			}
 
@@ -1385,6 +1576,13 @@ emit_code_blamed(struct jg2_srr *r, const char *blob, size_t len,
 
 		pos = le + 1;
 	}
+
+#if defined(LWS_WITH_HL)
+	if (hl_ok) {
+		if (lws_hl_finish(&hlctx) || lws_hl_html_close(&hlhtml))
+			return 1;
+	}
+#endif
 
 	return 0;
 }
@@ -1696,13 +1894,19 @@ render_tree(struct jg2_srr *r, const struct jg2_jn * const *items,
 
 		blamemap_build(jg2_jn_obj_get(blameitem, "blame"), &bm,
 			       blob_line_count(blob, blob_len), &ac);
-		ret = emit_code_blamed(r, blob, blob_len, &bm);
+		ret = emit_code_blamed(r, blob, blob_len, &bm, blobname);
 		lwsac_free(&ac);
 
 		if (ret)
 			return 1;
 	} else {
-		if (ssr_esc_len(r, blob, blob_len))
+		/*
+		 * Plain code view: server-side highlighting for languages
+		 * we know, escaped text for everything else.
+		 */
+
+		if (hl_emit_file(r->h, blobname, blob, blob_len) &&
+		    ssr_esc_len(r, blob, blob_len))
 			return 1;
 	}
 
