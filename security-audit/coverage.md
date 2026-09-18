@@ -73,10 +73,17 @@ attacker-influenced by anyone with push access to a displayed repo.
 - Next free report seq: `SA-016` (see `reports/`)
 - Next free finding id: `F-024` (see `findings.md`)
 - **FIRST FULL SWEEP COMPLETE (SA-011, 2026-09-13)** — every unit in
-  all 4 tiers has a status.  Totals: 22 findings filed, 15 fixed
-  (SA-005-verified), 7 open (F-016..F-022).  The audit now runs
-  Track A only until new commits land; open findings await triage
-  / a commissioned fix session.
+  all 4 tiers has a status.
+- **Fix session 2026-09-18**: all 8 then-open findings (F-016..F-023)
+  fixed, one commit each (90bd8f9, 9d1829b, f352288, d4e03fb, 330a42a,
+  fef4db4, 8e39436, 5ecfd1b); smoke-tested via jg2-example (incl. a
+  purpose-built 51-commit repo for F-018) and 30s of 16-thread
+  threadchurn for F-020.  F-021/F-022 resolved by deleting the assets
+  the SSR rework orphaned.  Totals: 23 findings filed, 23 fixed, 0
+  open.  Residual recorded in F-023: >60s compute-only trie builds
+  still abort + retry (shed-limited); the SSR delta itself
+  (ssr.c/markdown.c/jsondom.c, landed after SA-015) is unaudited and
+  is the top Track A priority.
 - **Fix session 2026-09-13** (696b960 → 2d61554): all 13 open findings
   F-003…F-015 fixed one-commit-per-finding; **SA-005 verified all of
   them in committed shape** (per-finding notes in Status histories).
