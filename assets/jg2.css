@@ -1358,6 +1358,39 @@ td.doc pre, div.blog-article-content pre {
 	overflow-x: auto;
 }
 
+/* ----------------------------------------------------------------------
+ * Code view line-number alignment
+ *
+ * The line-number column and the code column must advance by exactly the
+ * same amount per line for 1000+ line files.  Percentage line-heights and
+ * differing font fallback lists can resolve differently between the two
+ * columns (font metrics, site css overrides), accumulating a visible
+ * drift; table-cell vertical-align: middle then turns the drift into a
+ * half-drift top offset.  Pin both columns to the same absolute
+ * font-size / line-height in px and align the cells to the top, so the
+ * alignment cannot depend on font resolution at all.
+ */
+
+td.doc pre, td.doc pre code, td.doc pre code span,
+pre:has(> code > div.jglinenumbers),
+pre:has(> code > div.jglinenumbers) code,
+div.jglinenumbers, div.jglinenumbers a {
+	font-family: "Inconsolata", monospace;
+	font-size: 14px;
+	line-height: 15.4px;
+}
+
+/* the code column's pre has 8px padding; match it on the numbers side so
+ * the first and last lines line up too */
+
+pre:has(> code > div.jglinenumbers) {
+	padding: 8px 0;
+}
+
+td.doc, td:has(> pre > code > div.jglinenumbers) {
+	vertical-align: top;
+}
+
 td.doc code, div.blog-article-content code {
 	font-family: "inconsolata", monospace;
 }
