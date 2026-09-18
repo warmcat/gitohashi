@@ -65,8 +65,12 @@
  *
  * Bumped to 4 when server-side syntax highlighting was integrated, since the
  * rendered content for code / blame / commit views changed shape.
+ *
+ * Bumped to 5 to drop cached entries holding a stray NUL that the cid
+ * comment and the non-proxied gravatar url carried from a
+ * hand-counted-length bug.
  */
-#define JG2_JSON_EPOCH 4
+#define JG2_JSON_EPOCH 5
 
 /*
  * Maximum cache base path length we will accept at vhost creation.

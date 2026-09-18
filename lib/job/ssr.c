@@ -623,7 +623,7 @@ emit_identity_img_src(struct jg2_srr *r, const char *md5)
 	if (r->avatar_proxied)
 		return jg2_hbuf_append(r->h, "_avatar", 7);
 
-	return jg2_hbuf_append(r->h, "?s=128&amp;d=retro", 19);
+	return jg2_hbuf_append(r->h, "?s=128&amp;d=retro", 18);
 }
 
 /*
@@ -2665,7 +2665,7 @@ jg2_ssr_render_group(struct jg2_ctx *ctx)
 							    "cid"));
 
 		if (cid && cid[0]) {
-			jg2_hbuf_append(&h, "<!-- jg2 cid:", 14);
+			jg2_hbuf_append(&h, "<!-- jg2 cid:", 13);
 			ssr_esc_attr(&r, cid);
 			jg2_hbuf_append(&h, " -->", 4);
 		}
