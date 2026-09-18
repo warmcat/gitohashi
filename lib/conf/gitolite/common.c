@@ -69,7 +69,7 @@ jg2_auth_name_ok(const char *auth)
 struct repo_entry_info *
 __jg2_repodir_repo(struct jg2_repodir *rd, const char *repo_name)
 {
-	lws_list_ptr lp = rd->rei_head;
+	lws_list_ptr lp = rd->rei_cur ? rd->rei_cur->rei_head : NULL;
 
 	while (lp) {
 		struct repo_entry_info *rei = lp_to_rei(lp, next);
@@ -181,6 +181,8 @@ __jg2_conf_gitolite_admin_head(struct jg2_ctx *ctx)
 		 * time we looked since starting... either way reload everything
 		 */
 
+		struct jg2_rei_gen *gen, *old = rd->rei_cur;
+
 		lwsl_notice("%s: gitolite-admin changed\n", __func__);
 
 		lws_snprintf(filepath, sizeof(filepath), "/tmp/_goh_rl_%s",
@@ -189,17 +191,32 @@ __jg2_conf_gitolite_admin_head(struct jg2_ctx *ctx)
 		strcpy(rd->hexoid_gitolite_conf, oid_hex);
 
 		/*
-		 * Drop ALL the rei and acl collected information
-		 * on the repodir and resets ALL the heads
+		 * Acquire the fresh repo list into a new generation.  The old
+		 * one is retired, not freed: in-flight contexts still walk it
+		 * holding only their vhost lock, and pin it for their lifetime
+		 * (see jg2_ctx_create / __jg2_ctx_destroy).  Free it straight
+		 * away only if nobody pins it; otherwise the last context out
+		 * frees it.
 		 */
 
-		lwsac_free(&rd->rei_lwsac_head);
-		rd->rei_head = NULL;
-		rd->acls_known_head = NULL;
+		gen = jg2_zalloc(sizeof(*gen));
+		if (gen) {
+			/* re-acquire the basic rei list (repos in the dir) */
 
-		/* re-acquire the basic rei list (repos in the dir) */
+			__jg2_conf_scan_repos(rd, gen);
 
-		__jg2_conf_scan_repos(rd);
+			rd->rei_cur = gen;
+
+			if (old) {
+				if (!old->refs) {
+					lwsac_free(&old->lwsac_head);
+					free(old);
+				} else {
+					old->next_retired = rd->rei_retired;
+					rd->rei_retired = old;
+				}
+			}
+		}
 	}
 
 	/* if we don't have it already, re-compute the vhost acl */

@@ -186,8 +186,23 @@ lwsl_err("match %p\n", rd->dcs);
 			if (rd->dcs)
 				lws_diskcache_destroy(&rd->dcs);
 
+			/*
+			 * all vhosts and contexts using this repodir are
+			 * gone: free the current and any retired generations
+			 */
+			while (rd->rei_retired) {
+				struct jg2_rei_gen *g1 = rd->rei_retired;
+
+				rd->rei_retired = g1->next_retired;
+				lwsac_free(&g1->lwsac_head);
+				free(g1);
+			}
+			if (rd->rei_cur) {
+				lwsac_free(&rd->rei_cur->lwsac_head);
+				free(rd->rei_cur);
+			}
+
 			pthread_mutex_destroy(&rd->lock);
-			lwsac_free(&rd->rei_lwsac_head);
 			free(rd);
 			break;
 		}
@@ -343,6 +358,31 @@ __jg2_ctx_destroy(struct jg2_ctx *ctx)
 		return 0;
 
 	ctx->destroying = 1;
+
+	if (ctx->rei_gen) {
+		struct jg2_repodir *rd = ctx->vhost->repodir;
+
+		pthread_mutex_lock(&rd->lock); /* ========== repodir lock */
+		if (!--ctx->rei_gen->refs && ctx->rei_gen != rd->rei_cur) {
+			/*
+			 * last context out of a retired generation...
+			 * unlink and free it now nobody walks it
+			 */
+			struct jg2_rei_gen **pg = &rd->rei_retired;
+
+			while (*pg) {
+				if (*pg == ctx->rei_gen) {
+					*pg = (*pg)->next_retired;
+					break;
+				}
+				pg = &(*pg)->next_retired;
+			}
+			lwsac_free(&ctx->rei_gen->lwsac_head);
+			free(ctx->rei_gen);
+		}
+		ctx->rei_gen = NULL;
+		pthread_mutex_unlock(&rd->lock); /* ---------- repodir unlock */
+	}
 
 	lwsac_use_cached_file_end(&ctx->vhost->html_content);
 
@@ -624,6 +664,17 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 	 */
 	pthread_mutex_lock(&vhost->repodir->lock); /* ========== repodir lock */
 	__jg2_conf_gitolite_admin_head(ctx);
+
+	/*
+	 * Pin the current repo-info generation for this context's lifetime:
+	 * jobs walk it computing cache keys and the repolist under only the
+	 * vhost lock, so a gitolite-admin change must not be able to free it
+	 * under them (it retires the generation instead).
+	 */
+	if (vhost->repodir->rei_cur) {
+		ctx->rei_gen = vhost->repodir->rei_cur;
+		ctx->rei_gen->refs++;
+	}
 
 	if (ctx->sr.e[JG2_PE_NAME]) {
 		const char *str;

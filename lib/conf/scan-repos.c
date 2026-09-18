@@ -47,7 +47,7 @@ rei_alpha_sort(lws_list_ptr a, lws_list_ptr b)
  */
 
 int
-__jg2_conf_scan_repos(struct jg2_repodir *rd)
+__jg2_conf_scan_repos(struct jg2_repodir *rd, struct jg2_rei_gen *gen)
 {
 	int alen, m, ret = -1, fd = -1, f = 0;
 	char *name, filepath[256], *p;
@@ -57,7 +57,7 @@ __jg2_conf_scan_repos(struct jg2_repodir *rd)
 	struct stat s;
 	DIR *dir;
 
-	if (rd->rei_head) {
+	if (gen->rei_head) {
 		lwsl_notice("%s: NOP since rei head populated\n", __func__);
 
 		return 0;
@@ -116,7 +116,7 @@ __jg2_conf_scan_repos(struct jg2_repodir *rd)
 		alen = jg2_get_repo_config(repo, NULL, NULL);
 
 		/* allocate the whole area at once */
-		rei = lwsac_use(&rd->rei_lwsac_head, sizeof(*rei) + m + alen, 0);
+		rei = lwsac_use(&gen->lwsac_head, sizeof(*rei) + m + alen, 0);
 		if (!rei) {
 			git_repository_free(repo);
 			goto bail;
@@ -137,7 +137,7 @@ __jg2_conf_scan_repos(struct jg2_repodir *rd)
 		/* place the config elements */
 		jg2_get_repo_config(repo, rei, p);
 
-		lws_list_ptr_insert(&rd->rei_head, &rei->next, rei_alpha_sort);
+		lws_list_ptr_insert(&gen->rei_head, &rei->next, rei_alpha_sort);
 
 		git_repository_free(repo);
 

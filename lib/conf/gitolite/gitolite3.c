@@ -605,7 +605,7 @@ judge:
 
 	/* prepare the single copy of the auth name the other items point to */
 
-	p = lwsac_use(&rd->rei_lwsac_head, strlen(auth) + 1, 0);
+	p = lwsac_use(&rd->rei_cur->lwsac_head, strlen(auth) + 1, 0);
 	if (!p) {
 		close(fd);
 		return 1;
@@ -674,7 +674,7 @@ judge:
 				lwsl_notice("%s: auth %s valid for %s\n",
 						__func__, p, si);
 
-				a3 = lwsac_use(&rd->rei_lwsac_head, sizeof(*a3), 0);
+				a3 = lwsac_use(&rd->rei_cur->lwsac_head, sizeof(*a3), 0);
 				if (!a3) {
 					close(fd);
 					return 1;
@@ -703,13 +703,13 @@ judge:
 
 	/* mark the rd as having broadside results already for this auth */
 
-	a3 = lwsac_use(&rd->rei_lwsac_head, sizeof(*a3), 0);
+	a3 = lwsac_use(&rd->rei_cur->lwsac_head, sizeof(*a3), 0);
 	if (!a3)
 		return 1;
 
 	a3->acl = p;
-	a3->next = rd->acls_known_head;
-	rd->acls_known_head = a3;
+	a3->next = rd->rei_cur->acls_known_head;
+	rd->rei_cur->acls_known_head = a3;
 
 	return 0;
 }
@@ -724,7 +724,11 @@ __jg2_conf_ensure_acl(struct jg2_ctx *ctx, const char *acl)
 
 	__jg2_conf_gitolite_admin_head(ctx);
 
-	a = rd->acls_known_head;
+	if (!rd->rei_cur)
+		/* no repo list could be acquired (eg, no gitolite-admin) */
+		return 1;
+
+	a = rd->rei_cur->acls_known_head;
 	while (a) {
 		if (!strcmp(acl, a->acl))
 			/* we already confirmed this acl, check valid list */

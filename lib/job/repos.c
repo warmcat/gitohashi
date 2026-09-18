@@ -29,7 +29,8 @@
 static int
 job_repos_start(struct jg2_ctx *ctx)
 {
-	ctx->rei = lp_to_rei(ctx->vhost->repodir->rei_head, next);
+	/* our pinned generation cannot be freed under us mid-listing */
+	ctx->rei = lp_to_rei(ctx->rei_gen ? ctx->rei_gen->rei_head : NULL, next);
 
 	meta_header(ctx);
 

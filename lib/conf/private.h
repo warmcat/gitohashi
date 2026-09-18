@@ -12,7 +12,7 @@ jg2_get_repo_config(git_repository *gr, struct repo_entry_info *rei, char *p);
 
 /* must have repodir lock */
 int
-__jg2_conf_scan_repos(struct jg2_repodir *rd);
+__jg2_conf_scan_repos(struct jg2_repodir *rd, struct jg2_rei_gen *gen);
 
 int
 __repo_check_acl(struct jg2_vhost *vh, const char *reponame,

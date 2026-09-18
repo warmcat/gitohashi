@@ -144,7 +144,7 @@ static void
 __jg2_job_hash_visible_repos(struct jg2_ctx *ctx)
 {
 	struct jg2_vhost *vh = ctx->vhost;
-	lws_list_ptr lp = vh->repodir->rei_head;
+	lws_list_ptr lp = ctx->rei_gen ? ctx->rei_gen->rei_head : NULL;
 
 	while (lp) {
 		struct repo_entry_info *rei = lp_to_rei(lp, next);
@@ -255,8 +255,9 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 
 	/* item 8: repo info */
 
-		if (job != JG2_JOB_SEARCH_TRIE && ctx->sr.e[JG2_PE_NAME]) {
-			lws_list_ptr lp = ctx->vhost->repodir->rei_head;
+		if (job != JG2_JOB_SEARCH_TRIE && ctx->sr.e[JG2_PE_NAME] &&
+		    ctx->rei_gen) {
+			lws_list_ptr lp = ctx->rei_gen->rei_head;
 
 			while (lp) {
 				struct repo_entry_info *rei =

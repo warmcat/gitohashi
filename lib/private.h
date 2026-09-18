@@ -102,6 +102,8 @@ struct jg2_vhost;
 #define MIB (1024 * 1024)
 #define KIB (1024)
 
+struct jg2_rei_gen; /* conf/private.h references it in a prototype */
+
 #include "conf/private.h"
 #include "job/private.h"
 #include "email/private.h"
@@ -149,13 +151,31 @@ typedef enum {
 } jg2_path_element;
 
 /*
- * acl name, aclv3 structs all allocate in rei_lwsac_head along with the rei,
- * so they can all be freed with freeing rei_lwsac_head lac.
+ * acl name, aclv3 structs all allocate in the generation's lwsac along
+ * with the rei, so they can all be freed by freeing its lwsac_head lac.
  */
 
 struct aclv3 {
 	struct aclv3 *next;	/* next aclv3 that can read the repo */
 	const char *acl;
+};
+
+/*
+ * A generation of the repodir's repo-entry info + acl results, all in one
+ * lwsac.  Workers walk the rei list computing cache keys and the repolist
+ * holding only their vhost lock, so a gitolite-admin change must retire a
+ * generation rather than free it: contexts pin the generation they were
+ * created under, and the last context to let go of a retired generation
+ * frees it.
+ */
+
+struct jg2_rei_gen {
+	struct lwsac *lwsac_head;
+	/* repo_entry_info list */
+	lws_list_ptr rei_head;
+	struct aclv3 *acls_known_head;	/* user acls that have been computed */
+	int refs;			/* contexts pinning this generation */
+	struct jg2_rei_gen *next_retired;
 };
 
 struct repo_entry_info {
@@ -184,12 +204,10 @@ struct jg2_repodir {
 	int refcount; /* vhosts using this struct */
 	time_t last_gitolite_admin_head_check;
 
-	/* repos in the repodir */
+	/* repos in the repodir: current + retired generations (rd lock) */
 
-	struct lwsac *rei_lwsac_head;
-	/* repo_entry_info list */
-	lws_list_ptr rei_head;
-	struct aclv3 *acls_known_head;	/* user acls that have been computed */
+	struct jg2_rei_gen *rei_cur;
+	struct jg2_rei_gen *rei_retired;
 
 	/* cache trimming */
 
@@ -389,6 +407,7 @@ struct jg2_ctx {
 	lws_list_ptr sorted_head;
 	struct tree_entry_info *tei;
 	struct repo_entry_info *rei;
+	struct jg2_rei_gen *rei_gen;	/**< pinned rei generation */
 	struct lws_fts *t;
 	int trie_fd;
 	struct ongoing_index *ongoing;
