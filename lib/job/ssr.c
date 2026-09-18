@@ -798,8 +798,22 @@ emit_aliases(struct jg2_srr *r, const struct jg2_jn *oidobj)
 }
 
 /* ----------------------------------------------------------------------
- * markdown glue: resolve repo-relative image / link urls
+ * markdown glue: the lws streaming markdown renderer (lws-md,
+ * hostile-input hardened) with repo-relative image / link url rewriting.
+ * The renderer contexts are some tens of KB, so they are heap-allocated
+ * rather than living on the service thread stack.
  */
+
+#if defined(LWS_WITH_MD)
+
+static lws_stateful_ret_t
+md_write_cb(void *user, const uint8_t *buf, size_t len)
+{
+	if (jg2_hbuf_append((struct jg2_hbuf *)user, (const char *)buf, len))
+		return LWS_SRET_FATAL;
+
+	return LWS_SRET_OK;
+}
 
 static size_t
 md_resolve_url(void *user, int is_image, const char *url, size_t len,
@@ -817,7 +831,7 @@ md_resolve_url(void *user, int is_image, const char *url, size_t len,
 	pieces[1] = r->reponame ? r->reponame : "";
 	plen[1] = strlen(pieces[1]);
 	pieces[2] = r->doc_dir;
-	plen[2] = strlen(r->doc_dir);
+	plen[2] = strlen(pieces[2]);
 
 	for (pi = 0; pi < 3; pi++) {
 		size_t i2;
@@ -866,13 +880,83 @@ md_resolve_url(void *user, int is_image, const char *url, size_t len,
 static int
 emit_markdown(struct jg2_srr *r, const char *md, size_t len)
 {
-	struct jg2_md_ctx mc;
+	lws_md_ctx_t *mdctx = calloc(1, sizeof(*mdctx));
+	lws_md_html_t *html = calloc(1, sizeof(*html));
+	const uint8_t *p = (const uint8_t *)md;
+	size_t l = len;
+	int ret = 1;
 
-	mc.resolve = md_resolve_url;
-	mc.user = r;
+	if (!mdctx || !html)
+		goto bail;
 
-	return jg2_markdown(r->h, md, len, &mc);
+	if (lws_md_html_construct(html, md_write_cb, r->h,
+				  md_resolve_url, r) ||
+	    lws_md_construct(mdctx, lws_md_html_event, html))
+		goto bail;
+
+	while (l) {
+		size_t was = l;
+		lws_stateful_ret_t sr = lws_md_parse(mdctx, &p, &l);
+
+		if (sr)
+			goto bail;
+		if (l == was) {
+			/*
+			 * Only legal for a final held CR; finish decides
+			 * it.  Anything else means we failed to make
+			 * progress.
+			 */
+			if (l > 1)
+				goto bail;
+			break;
+		}
+	}
+
+	if (lws_md_finish(mdctx) || lws_md_html_close(html))
+		goto bail;
+
+	ret = 0;
+
+bail:
+	free(html);
+	free(mdctx);
+
+	return ret;
 }
+
+#else /* ! LWS_WITH_MD */
+
+/*
+ * Without the renderer in the lws build, degrade to fully-escaped text:
+ * nothing from the markdown can become markup, there is just no structure.
+ */
+
+static int
+emit_markdown(struct jg2_srr *r, const char *md, size_t len)
+{
+	size_t n;
+
+	if (jg2_hbuf_append(r->h, "<pre>", 5))
+		return 1;
+
+	for (n = 0; n < len; n++) {
+		const char *rep = NULL;
+
+		switch (md[n]) {
+		case '&':	rep = "&amp;";	break;
+		case '<':	rep = "&lt;";	break;
+		case '>':	rep = "&gt;";	break;
+		}
+
+		if (rep ? jg2_hbuf_append(r->h, rep, strlen(rep)) :
+			  jg2_hbuf_append(r->h, md + n, 1))
+			return 1;
+	}
+
+	return jg2_hbuf_append(r->h, "</pre>", 6);
+}
+
+#endif /* LWS_WITH_MD */
 
 /* ----------------------------------------------------------------------
  * item renderers

@@ -73,7 +73,7 @@
  * Bumped to 6 when blame groups gained clickable css :target popups with
  * commit links.
  */
-#define JG2_JSON_EPOCH 6
+#define JG2_JSON_EPOCH 8
 
 /*
  * Maximum cache base path length we will accept at vhost creation.
@@ -719,21 +719,6 @@ int
 jg2_hbuf_append(struct jg2_hbuf *h, const char *s, size_t len);
 int
 jg2_hbuf_printf(struct jg2_hbuf *h, const char *fmt, ...) JG2_FORMAT(2);
-
-/*
- * markdown.c
- */
-
-struct jg2_md_ctx {
-	/* rewrite a repo-relative URL; returns rewritten length or 0 */
-	size_t (*resolve)(void *user, int is_image, const char *url,
-			  size_t len, char *out, size_t out_len);
-	void *user;
-};
-
-int
-jg2_markdown(struct jg2_hbuf *h, const char *md, size_t len,
-	     const struct jg2_md_ctx *mc);
 
 /* accept-language -> locale index, shared by cache key and renderer */
 unsigned char

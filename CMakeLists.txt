@@ -160,15 +160,14 @@ set(JG2_SOURCES lib/cache.c
 	    lib/job/reflist.c
 	    lib/job/log.c
 	    lib/job/commit.c
-	    lib/job/tree.c
-	    lib/job/plain.c
-	    lib/job/repos.c
-	    lib/job/blame.c
-	    lib/job/blog.c
-	    lib/job/search.c
-	    lib/job/jsondom.c
-	    lib/job/markdown.c
-	    lib/job/ssr.c
+		    lib/job/tree.c
+		    lib/job/plain.c
+		    lib/job/repos.c
+		    lib/job/blame.c
+		    lib/job/blog.c
+		    lib/job/search.c
+		    lib/job/jsondom.c
+		    lib/job/ssr.c
 
 	    lib/conf/gitolite/gitolite3.c
 	    lib/conf/gitolite/common.c

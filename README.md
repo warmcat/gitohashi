@@ -40,9 +40,10 @@ https://warmcat.com/git .
  - Only needs configuration per-vhost in JSON, the repo configuration and
    access control is taken from gitolite config.
 
- - CSS and HTML templates are provided along with a C markdown renderer
-   to present the content in a modern and responsive way.  SVG icons
-   provided.  Customizing the css and HTML template encouraged.
+ - CSS and HTML templates are provided along with server-side markdown
+   rendering and syntax highlighting to present the content in a modern and
+   responsive way.  SVG icons provided.  Customizing the css and HTML
+   template encouraged.
 
  - Transparent caching at rendered-HTML block level, keyed using global
    repository ref state and the client locale... cache invalidated when any
@@ -370,12 +371,18 @@ page.  The default CSP is enough to get A+ at https://observatory.mozilla.org .
 
 ### Markdown
 
-README and blog markdown is rendered by gitohashi's own small server-side
-markdown renderer.  Raw HTML in the markdown is never passed through: every
-emitted byte is HTML-escaped at render time, which removes the XSS class the
-old client-side "preprocess the dangerous characters" approach had to defend
-against.  Repo-relative image and link URLs are rewritten to /plain/ and
-/tree/ URLs automatically, like the old client-side showdown extension did.
+README and blog markdown is rendered server-side by the lws streaming
+markdown renderer (`lws-md`, see `READMEs/README.markdown-renderer.md` in
+the lws tree).  The renderer only issues structural events and data to its
+sink; all markup synthesis, escaping and the URL scheme policy belong to
+the sink, so raw HTML in the markdown is never passed through: every
+emitted byte is HTML-escaped at render time, which removes the XSS class
+the old client-side "preprocess the dangerous characters" approach had to
+defend against.  Repo-relative image and link URLs are rewritten to
+/plain/ and /tree/ URLs automatically, like the old client-side showdown
+extension did.  Fenced code blocks tagged with a language the lws
+highlighter knows (c, cpp, diff, ...) are highlighted exactly like the
+file views.
 
 With this the xss test page at ./xss/README.md with several dozen xss
 variations does not render to anything active scriptwise.
