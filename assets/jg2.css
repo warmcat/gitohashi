@@ -1429,3 +1429,72 @@ code.diff span.hl-da, code.diff span.hl-dr, code.diff span.hl-dh {
 	display: inline;
 	border-radius: 2px;
 }
+
+/* ----------------------------------------------------------------------
+ * Blame popups without js: clicking a shaded blame group follows an anchor
+ * to its panel, css :target unhides it.  The panel carries the hunk
+ * author / date / message, the commit id, a link to the commit view and a
+ * "blame at the original commit" link.
+ */
+
+a.blm {
+	text-decoration: none;
+	color: inherit;
+}
+
+div.blpop {
+	display: none;
+	position: fixed;
+	top: 12px;
+	right: 12px;
+	max-width: 480px;
+	background: #fff;
+	border: 1px solid #c9d1d9;
+	border-radius: 6px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+	padding: 10px 14px;
+	z-index: 20;
+	font-size: 13px;
+}
+
+div.blpop:target {
+	display: block;
+}
+
+div.blpop-x {
+	float: right;
+	margin-left: 12px;
+}
+
+div.blpop-x a {
+	text-decoration: none;
+	font-size: 18px;
+	color: #666;
+}
+
+div.blpop table {
+	border-collapse: collapse;
+}
+
+div.blpop td {
+	vertical-align: top;
+	padding: 4px 8px;
+}
+
+div.blpop img.inline-identity {
+	width: 64px;
+	height: 64px;
+}
+
+div.blpop-log a {
+	font-weight: bold;
+}
+
+div.blpop-oid {
+	font-size: 11px;
+	color: #586069;
+}
+
+div.blpop-old {
+	margin-top: 6px;
+}

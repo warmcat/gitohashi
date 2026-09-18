@@ -69,8 +69,11 @@
  * Bumped to 5 to drop cached entries holding a stray NUL that the cid
  * comment and the non-proxied gravatar url carried from a
  * hand-counted-length bug.
+ *
+ * Bumped to 6 when blame groups gained clickable css :target popups with
+ * commit links.
  */
-#define JG2_JSON_EPOCH 5
+#define JG2_JSON_EPOCH 6
 
 /*
  * Maximum cache base path length we will accept at vhost creation.

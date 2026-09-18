@@ -1452,12 +1452,112 @@ blamemap_hunk(const struct jg2_jn *blame, int idx1)
 	return h;
 }
 
+/* original-file line number for a 1-based final line, via the ranges */
+
+static long long
+blamemap_orig_line(const struct jg2_jn *hk, size_t line1)
+{
+	const struct jg2_jn *rg;
+
+	if (!hk || !line1)
+		return 0;
+
+	rg = jg2_jn_obj_get(hk, "ranges");
+	if (rg)
+		for (rg = rg->child; rg; rg = rg->next) {
+			long long f = jg2_jn_ll(jg2_jn_obj_get(rg, "f"));
+			long long l = jg2_jn_ll(jg2_jn_obj_get(rg, "l"));
+
+			if (line1 >= (size_t)f && line1 < (size_t)(f + l))
+				return jg2_jn_ll(jg2_jn_obj_get(rg, "o"));
+		}
+
+	return 0;
+}
+
+/*
+ * The no-JS blame popup: emitted after the code table, unhidden purely by
+ * css :target when a blame group anchor pointing at #blp-N is clicked.
+ */
+
+static int
+emit_blame_panel(struct jg2_srr *r, struct jg2_hbuf *pop, int g,
+		 const struct jg2_jn *hk, size_t gline)
+{
+	const struct jg2_jn *sig = jg2_jn_obj_get(hk, "sig_final");
+	const char *fo = jg2_jn_str(jg2_jn_obj_get(
+				jg2_jn_obj_get(hk, "final_oid"), "oid"));
+	const char *oo = jg2_jn_str(jg2_jn_obj_get(
+				jg2_jn_obj_get(hk, "orig_oid"), "oid"));
+	const char *lg = jg2_jn_str(jg2_jn_obj_get(hk, "log_final"));
+	const char *op = jg2_jn_str(jg2_jn_obj_get(hk, "op"));
+	struct jg2_hbuf *save = r->h;
+	long long oline;
+	int ret = 1;
+
+	if (!fo || !sig)
+		return 0;
+
+	if (jg2_hbuf_printf(pop, "<div class=\"blpop\" id=\"blp-%d\">"
+			    "<div class=\"blpop-x\">"
+			    "<a href=\"#\">&times;</a></div>"
+			    "<table><tr><td class=\"blpop-av\">", g))
+		goto bail;
+
+	/* identity emits through r->h: aim it at the popup buffer */
+
+	r->h = pop;
+	if (emit_identity(r, sig, 64, 7))
+		goto bail;
+
+	if (HAP(r, "</td><td class=\"blpop-info\">"
+		  "<div class=\"blpop-log\"><a href=\"") ||
+	    url_make(r, r->reponame, "commit", NULL, NULL, fo, 0) ||
+	    HAP(r, "\">") ||
+	    ssr_esc(r, lg) ||
+	    HAP(r, "</a></div>"
+		  "<div class=\"blpop-oid\"><a href=\"") ||
+	    url_make(r, r->reponame, "commit", NULL, NULL, fo, 0) ||
+	    jg2_hbuf_printf(r->h, "\">%s</a></div>", fo))
+		goto bail;
+
+	/*
+	 * The "blame at the commit this came from" link, like the old js
+	 * blameotron devolve: only meaningful when it would go somewhere
+	 * else than we already are.
+	 */
+
+	oline = blamemap_orig_line(hk, gline);
+
+	if (oo && oline && (!r->qid || strcmp(oo, r->qid))) {
+		if (HAP(r, "<div class=\"blpop-old\">"
+			  "<a href=\"") ||
+		    url_make(r, r->reponame, "blame",
+			     op && op[0] ? op : r->rpath, NULL, oo, 0) ||
+		    jg2_hbuf_printf(r->h, "#n%lld\">", oline) ||
+		    ssr_esc(r, oo) ||
+		    HAP(r, "</a></div>"))
+			goto bail;
+	}
+
+	if (HAP(r, "</td></tr></table></div>"))
+		goto bail;
+
+	ret = 0;
+
+bail:
+	r->h = save;
+
+	return ret;
+}
+
 static int
 emit_code_blamed(struct jg2_srr *r, const char *blob, size_t len,
-		 const struct jg2_blamemap *bm, const char *blobname)
+		 const struct jg2_blamemap *bm, const char *blobname,
+		 struct jg2_hbuf *pop)
 {
-	size_t pos = 0, gstart = 0, lineno = 0;
-	int cur = -1;
+	size_t pos = 0, gstart = 0, lineno = 0, gline = 0;
+	int cur = -1, g = 0;
 
 #if defined(LWS_WITH_HL)
 	lws_hl_ctx_t hlctx;
@@ -1490,6 +1590,7 @@ emit_code_blamed(struct jg2_srr *r, const char *blob, size_t len,
 		if (cur == -1) {
 			cur = h;
 			gstart = pos;
+			gline = lineno + 1;
 		}
 
 		/*
@@ -1501,8 +1602,20 @@ emit_code_blamed(struct jg2_srr *r, const char *blob, size_t len,
 		closing = (h != cur) || (le == len);
 
 		if (closing) {
-			size_t gend = (le < len) ? le + 1 : len;
+			/*
+			 * The group spans [gstart, gend).  When we are
+			 * closing because the hunk changed on this line, the
+			 * current line belongs to the NEXT group: end at le
+			 * and reprocess this line through the new group.
+			 * Otherwise (end of file) include the final line
+			 * including its newline, if any.
+			 */
+
+			size_t gend = (h != cur) ? le :
+					((le < len) ? le + 1 : len);
 			const struct jg2_jn *hk;
+
+			if (gend > gstart) {
 
 			if (cur > 0 && (hk = blamemap_hunk(bm->hunks, cur))) {
 				const struct jg2_jn *sig =
@@ -1511,19 +1624,30 @@ emit_code_blamed(struct jg2_srr *r, const char *blob, size_t len,
 						jg2_jn_obj_get(sig, "name"));
 				const char *lg = jg2_jn_str(
 						jg2_jn_obj_get(hk, "log_final"));
+				const char *fo = jg2_jn_str(jg2_jn_obj_get(
+					jg2_jn_obj_get(hk, "final_oid"), "oid"));
 				const struct jg2_jn *gt = jg2_jn_obj_get(
 					jg2_jn_obj_get(sig, "git_time"),
 					"time");
 
+				/*
+				 * The group is an anchor to its css
+				 * :target popup, carrying the hunk info
+				 * and the link to the commit.
+				 */
+
+				g++;
+
 				if (jg2_hbuf_printf(r->h,
+						"<a class='blm' href='#blp-%d'>"
 						"<span class='bl-%d' title=\"",
-						(cur - 1) & 7) ||
+						g, (cur - 1) & 7) ||
 				    ssr_esc_attr(r, nm) ||
 				    HAP(r, ", ") ||
 				    emit_age_plain(r, gt ? jg2_jn_ll(gt) : 0) ||
 				    HAP(r, " &mdash; ") ||
 				    ssr_esc_attr(r, lg) ||
-				    HAP(r, "\">"))
+				    jg2_hbuf_printf(r->h, " (%s)\">", fo ? fo : ""))
 					return 1;
 			}
 
@@ -1558,15 +1682,33 @@ emit_code_blamed(struct jg2_srr *r, const char *blob, size_t len,
 			}
 
 			if (cur > 0 && blamemap_hunk(bm->hunks, cur)) {
-				if (HAP(r, "</span>"))
+				if (HAP(r, "</span></a>"))
+					return 1;
+
+				/* the css popup for this group */
+
+				if (emit_blame_panel(r, pop, g,
+						     blamemap_hunk(bm->hunks, cur),
+						     gline))
 					return 1;
 			}
 
+			}
+
 			if (h != cur) {
+				/*
+				 * Reprocess this line as the first line of
+				 * the new group, without consuming it.
+				 */
+
 				cur = h;
 				gstart = pos;
-			} else
-				cur = -1;
+				gline = lineno + 1;
+
+				continue;
+			}
+
+			cur = -1;
 		}
 
 		lineno++;
@@ -1890,15 +2032,30 @@ render_tree(struct jg2_srr *r, const struct jg2_jn * const *items,
 	if (blameitem) {
 		struct jg2_blamemap bm;
 		struct lwsac *ac = NULL;
+		struct jg2_hbuf pop;
 		int ret;
+
+		memset(&pop, 0, sizeof(pop));
 
 		blamemap_build(jg2_jn_obj_get(blameitem, "blame"), &bm,
 			       blob_line_count(blob, blob_len), &ac);
-		ret = emit_code_blamed(r, blob, blob_len, &bm, blobname);
+		ret = emit_code_blamed(r, blob, blob_len, &bm, blobname, &pop);
 		lwsac_free(&ac);
 
-		if (ret)
+		if (ret) {
+			free(pop.buf);
+
 			return 1;
+		}
+
+		/* the css-only blame popups, after the code table */
+
+		if (pop.len && jg2_hbuf_append(r->h, pop.buf, pop.len)) {
+			free(pop.buf);
+
+			return 1;
+		}
+		free(pop.buf);
 	} else {
 		/*
 		 * Plain code view: server-side highlighting for languages
