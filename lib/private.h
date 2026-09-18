@@ -72,8 +72,11 @@
  *
  * Bumped to 6 when blame groups gained clickable css :target popups with
  * commit links.
+ *
+ * Bumped to 7 fixing blame boundary line duplication and adding the patch
+ * link to the blame popups (collapsed into 8 with the audit-fix session).
  */
-#define JG2_JSON_EPOCH 8
+#define JG2_JSON_EPOCH 9
 
 /*
  * Maximum cache base path length we will accept at vhost creation.

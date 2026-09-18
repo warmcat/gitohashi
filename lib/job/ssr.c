@@ -1602,7 +1602,9 @@ emit_blame_panel(struct jg2_srr *r, struct jg2_hbuf *pop, int g,
 	    HAP(r, "</a></div>"
 		  "<div class=\"blpop-oid\"><a href=\"") ||
 	    url_make(r, r->reponame, "commit", NULL, NULL, fo, 0) ||
-	    jg2_hbuf_printf(r->h, "\">%s</a></div>", fo))
+	    jg2_hbuf_printf(r->h, "\">%s</a> <a href=\"", fo) ||
+	    url_make(r, r->reponame, "patch", NULL, NULL, fo, 0) ||
+	    HAP(r, "\">patch</a></div>"))
 		goto bail;
 
 	/*
@@ -1689,13 +1691,15 @@ emit_code_blamed(struct jg2_srr *r, const char *blob, size_t len,
 			/*
 			 * The group spans [gstart, gend).  When we are
 			 * closing because the hunk changed on this line, the
-			 * current line belongs to the NEXT group: end at le
-			 * and reprocess this line through the new group.
-			 * Otherwise (end of file) include the final line
-			 * including its newline, if any.
+			 * current line belongs to the NEXT group: end at pos,
+			 * the start of the current line (ending at le would
+			 * wrongly include this line's text, since le is the
+			 * index of this line's newline).  Otherwise (end of
+			 * file) include the final line including its newline,
+			 * if any.
 			 */
 
-			size_t gend = (h != cur) ? le :
+			size_t gend = (h != cur) ? pos :
 					((le < len) ? le + 1 : len);
 			const struct jg2_jn *hk;
 
@@ -2113,26 +2117,47 @@ render_tree(struct jg2_srr *r, const struct jg2_jn * const *items,
 		  "<pre><code id=\"do-hljs\">"))
 		return 1;
 
-	if (blameitem) {
-		struct jg2_blamemap bm;
-		struct lwsac *ac = NULL;
+	{
 		struct jg2_hbuf pop;
-		int ret;
 
 		memset(&pop, 0, sizeof(pop));
 
-		blamemap_build(jg2_jn_obj_get(blameitem, "blame"), &bm,
-			       blob_line_count(blob, blob_len), &ac);
-		ret = emit_code_blamed(r, blob, blob_len, &bm, blobname, &pop);
-		lwsac_free(&ac);
+		if (blameitem) {
+			struct jg2_blamemap bm;
+			struct lwsac *ac = NULL;
+			int ret;
 
-		if (ret) {
-			free(pop.buf);
+			blamemap_build(jg2_jn_obj_get(blameitem, "blame"), &bm,
+				       blob_line_count(blob, blob_len), &ac);
+			ret = emit_code_blamed(r, blob, blob_len, &bm,
+					       blobname, &pop);
+			lwsac_free(&ac);
 
-			return 1;
+			if (ret) {
+				free(pop.buf);
+
+				return 1;
+			}
+		} else {
+			/*
+			 * Plain code view: server-side highlighting for
+			 * languages we know, escaped text for everything
+			 * else.
+			 */
+
+			if (hl_emit_file(r->h, blobname, blob, blob_len) &&
+			    ssr_esc_len(r, blob, blob_len))
+				return 1;
 		}
 
-		/* the css-only blame popups, after the code table */
+		if (HAP(r, "</code></pre></td></tr></table>"))
+			return 1;
+
+		/*
+		 * The css-only blame popups, emitted after the code table
+		 * (not inside the code element, where they would be
+		 * invalid nesting).
+		 */
 
 		if (pop.len && jg2_hbuf_append(r->h, pop.buf, pop.len)) {
 			free(pop.buf);
@@ -2140,19 +2165,7 @@ render_tree(struct jg2_srr *r, const struct jg2_jn * const *items,
 			return 1;
 		}
 		free(pop.buf);
-	} else {
-		/*
-		 * Plain code view: server-side highlighting for languages
-		 * we know, escaped text for everything else.
-		 */
-
-		if (hl_emit_file(r->h, blobname, blob, blob_len) &&
-		    ssr_esc_len(r, blob, blob_len))
-			return 1;
 	}
-
-	if (HAP(r, "</code></pre></td></tr></table>"))
-		return 1;
 
 	return 0;
 }
