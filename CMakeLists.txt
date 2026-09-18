@@ -234,16 +234,12 @@ install(TARGETS jsongit2
 
 
 
-install(FILES assets/github.css
-	      assets/logo.css
+install(FILES assets/logo.css
 	      assets/gitohashi-custom.css
-	      assets/highlight.pack.js
 	      assets/jg2.css
 	      assets/jg2-login.js
 	      assets/favicon.ico
 	      assets/inconsolata.ttf
-	      assets/showdown.min.js
-	      assets/showdown.min.js.map
 			DESTINATION "${DATA_DIR}/gitohashi/assets")
 			
 install(FILES example-cert/localhost-100y.cert.pem
