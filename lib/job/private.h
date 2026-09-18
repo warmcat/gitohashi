@@ -115,6 +115,11 @@ job_common_header(struct jg2_ctx *ctx);
 void
 meta_trailer(struct jg2_ctx *ctx, const char *term);
 
+/* finish + rename the cache entry being written, if any (ssr drain) */
+
+void
+jg2_cache_write_complete(struct jg2_ctx *ctx);
+
 void
 __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 			     char *md5_hex33);

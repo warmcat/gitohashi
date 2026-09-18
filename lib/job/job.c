@@ -111,14 +111,20 @@ job_spool_from_cache(struct jg2_ctx *ctx)
 	ctx->p += n;
 	ctx->existing_cache_pos += n;
 
-	if (!n || ctx->existing_cache_pos == ctx->existing_cache_size) {
+		if (!n || ctx->existing_cache_pos == ctx->existing_cache_size) {
 		/* finished */
 		ctx->final = 1;
 		ctx->job = NULL;
 		close(ctx->fd_cache);
 		ctx->fd_cache = -1;
 
-		if (ctx->last_from_cache[4] == ']' && ctx->last_from_cache[5] == '}') {
+		/*
+		 * The ']}' splice fixup is about JSON seals; cached HTML
+		 * entries must pass through untouched.
+		 */
+
+		if (!ctx->html_render &&
+		    ctx->last_from_cache[4] == ']' && ctx->last_from_cache[5] == '}') {
 			ctx->p[-1] = ' ';
 			ctx->existing_cache_pos--;
 			ctx->last_from_cache[5] = ' ';
@@ -177,6 +183,13 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
 	 *         no longer be referenced and get reaped from old age.
 	 */
 	ctx->vhost->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)&je, 2);
+
+	/* item 1b: for HTML contexts, the rendered locale changes the output
+	 *	     (translated chrome), so it has to be part of the key
+	 */
+	if (ctx->html_render)
+		ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
+					(const unsigned char *)&ctx->locale, 1);
 
 	/* item 2: the low 32-bits of the count */
 	if (job != JG2_JOB_SEARCH_TRIE) {
@@ -527,6 +540,15 @@ cache_write_complete(struct jg2_ctx *ctx)
 	}
 }
 
+/* exported for the ssr drain, which owns the cache write for HTML contexts */
+
+void
+jg2_cache_write_complete(struct jg2_ctx *ctx)
+{
+	if (ctx->fd_cache != -1)
+		cache_write_complete(ctx);
+}
+
 static void
 cache_write(struct jg2_ctx *ctx, jg2_job job_in)
 {
@@ -579,6 +601,18 @@ meta_header(struct jg2_ctx *ctx)
 
 	if (ctx->meta || ctx->destroying)
 		return;
+
+	/*
+	 * For server-side-rendered HTML contexts, no JSON header is emitted:
+	 * the renderer takes everything it needs (vpath, repo identity,
+	 * locale, caps) from the ctx and vhost config directly.
+	 */
+
+	if (ctx->html_render) {
+		ctx->meta = 1;
+
+		return;
+	}
 
 	if (ctx->vhost->cfg.avatar_url)
 		av = ctx->vhost->cfg.avatar_url;
@@ -693,11 +727,34 @@ meta_trailer(struct jg2_ctx *ctx, const char *term)
 	int cfixup = ctx->last_from_cache[4] == ']' && ctx->last_from_cache[5] == ' ';
 	uint32_t files, done;
 
+	ctx->final = 1;
+
+	/*
+	 * For server-side-rendered HTML contexts there is no s-rider, no
+	 * root seal and no cache write here: the captured item JSON is
+	 * parsed and rendered when the job group completes, and the rendered
+	 * HTML is what gets persisted to the cache by the drain.  But the
+	 * item itself must still be structurally closed in the capture, so
+	 * the renderer sees well-formed objects: the job's term plus the
+	 * item seal.
+	 */
+
+	if (ctx->html_render) {
+		if (!ctx->meta || ctx->destroying)
+			return;
+
+		if (term)
+			CTX_BUF_APPEND("%s}", term);
+
+		ctx->started = ctx->meta = 0;
+
+		return;
+	}
+
 	if (lws_ptr_diff(ctx->end, ctx->p) < JG2_RESERVE_SEAL)
 		lwsl_err("%s: JG2_RESERVE_SEAL %d but only %d left\n", __func__,
 			 JG2_RESERVE_SEAL, lws_ptr_diff(ctx->end, ctx->p));
 
-	ctx->final = 1;
 	bl = mode && !strcmp(mode, "blame") && ctx->meta_last_job && !ctx->sealed_items;
 
 	gettimeofday(&t2, NULL);
@@ -973,8 +1030,6 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 
 	case HTML_STATE_JSON:
 
-		 lwsl_err("%s: STATE_JSON\n", __func__);
-
 		if (!jg2_ctx_get_job(ctx))
 			break;
 
@@ -984,33 +1039,83 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 		 */
 		job_in = ctx->job;
 		gettimeofday(&ctx->tv_last, NULL);
-		more = jg2_ctx_get_job(ctx)(ctx);
-		gettimeofday(&t2, NULL);
-		if (more < 0) {
-			char pure[256];
 
-			lwsl_notice("%s: get_job failed %d (%d) %s\n", __func__,
-				    more, ctx->job_state, ctx->status);
+		/*
+		 * For HTML contexts, job JSON output that we generated live
+		 * is captured into a growing buffer instead of going to the
+		 * wire; it is parsed and rendered when the group completes.
+		 * Cache hits spool rendered HTML straight to the wire.
+		 */
 
-			meta_header(ctx);
-			job_common_header(ctx);
+		if (ctx->html_render && job_in != job_spool_from_cache) {
+			char *wb = ctx->buf, *wp = ctx->p, *we = ctx->end;
 
-			ellipsis_purify(pure, ctx->status, sizeof(pure));
+			if (jg2_ssr_capture_begin(ctx))
+				return -1;
 
-			CTX_BUF_APPEND(" \"error\": \"%s\"}", pure);
-			CTX_BUF_APPEND("]}");
+			more = jg2_ctx_get_job(ctx)(ctx);
 
-			/* hm... let's say we completed */
-			ctx->final = 1;
-			ctx->meta_last_job = 1;
-			ctx->partway = 0;
-			ctx->sealed_items = 1;
+			if (more < 0) {
+				char pure[256];
+
+				meta_header(ctx);
+				job_common_header(ctx);
+
+				ellipsis_purify(pure, ctx->status,
+						sizeof(pure));
+
+				CTX_BUF_APPEND(" \"error\": \"%s\"}", pure);
+
+				/* the JSON-only ]} seal */
+
+				if (!ctx->html_render)
+					CTX_BUF_APPEND("]}");
+
+				ctx->final = 1;
+				ctx->meta_last_job = 1;
+				ctx->partway = 0;
+				ctx->sealed_items = 1;
+			}
+
+			jg2_ssr_capture_end(ctx, wb, wp, we);
+		} else {
+			more = jg2_ctx_get_job(ctx)(ctx);
+
+			if (more < 0) {
+				char pure[256];
+
+				meta_header(ctx);
+				job_common_header(ctx);
+
+				ellipsis_purify(pure, ctx->status,
+						sizeof(pure));
+
+				CTX_BUF_APPEND(" \"error\": \"%s\"}", pure);
+
+				if (!ctx->html_render)
+					CTX_BUF_APPEND("]}");
+
+				/* hm... let's say we completed */
+				ctx->final = 1;
+				ctx->meta_last_job = 1;
+				ctx->partway = 0;
+				ctx->sealed_items = 1;
+
+				if (ctx->html_render) {
+					/* spool-side failure: no valid JSON to
+					 * render; show the empty error page */
+					ctx->cap_len = 0;
+					ctx->cap_overflow = 0;
+				}
+			}
 		}
+		gettimeofday(&t2, NULL);
 		// lwsl_err("%s: job says %d\n", __func__, more);
 
 		ctx->us_gen += timeval_us(&t2) - timeval_us(&ctx->tv_last);
 
-		cache_write(ctx, job_in);
+		if (!ctx->html_render)
+			cache_write(ctx, job_in);
 
 		/*
 		 * final: 0 = still going, 1 = final, 2 = final send but stay
@@ -1097,8 +1202,23 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 			 * were making one.
 			 */
 
-			if (ctx->fd_cache != -1)
+			if (ctx->fd_cache != -1 && !ctx->html_render)
 				cache_write_complete(ctx);
+
+			if (ctx->html_render) {
+				/*
+				 * Render whatever was captured into HTML and
+				 * set up the drain; stats-only for pure
+				 * cache-hit transactions.
+				 */
+
+				if (jg2_ssr_render_group(ctx))
+					return -1;
+
+				ctx->html_state = HTML_STATE_HTML_DRAIN;
+
+				break;
+			}
 
 			if (ctx->flags & JG2_CTX_FLAG_HTML)
 				ctx->html_state = HTML_STATE_HTML_TRAILER;
@@ -1107,6 +1227,11 @@ jg2_ctx_fill(struct jg2_ctx *ctx, char *buf, size_t len, size_t *used,
 
 			break;
 		}
+		break;
+
+	case HTML_STATE_HTML_DRAIN:
+		if (jg2_ssr_drain(ctx))
+			ctx->html_state = HTML_STATE_HTML_TRAILER;
 		break;
 
 	case HTML_STATE_HTML_TRAILER:

@@ -125,7 +125,13 @@ int main(int argc, const char **argv)
 
 //	git_libgit2_opts(GIT_OPT_SET_OWNER_VALIDATION, 0);
 
-	context = context_creation("/etc/gitohashi");
+	/*
+	 * default is the production config dir; -c <dir> allows running a
+	 * test instance against a different config
+	 */
+
+	p = lws_cmdline_option(argc, argv, "-c");
+	context = context_creation(p ? p : "/etc/gitohashi");
 	if (!context) {
 		lwsl_err("lws init failed\n");
 		return 1;

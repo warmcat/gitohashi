@@ -25,22 +25,29 @@ https://warmcat.com/git .
  - No per-page forking... no cgi... no subprocesses... persistant daemon
    architecture
 
+ - Server-side rendering: pages are complete HTML direct from the server,
+   no client JS needed.  The job pipeline still produces JSON internally,
+     but it is rendered to HTML server-side (with server-side markdown
+     and i18n) before it is cached and served.  Bots, text browsers and
+     JS-disabled browsers get the full site.  Client JS is optional
+     enhancement only.
+
  - Can optionally serve http[s] directly over http/1.1 and http/2, and / or
    serve locally on per-vhost unix socket for integration with existing Apache /
    lighttpd etc server + mod_proxy
-   
+	   
  - Only needs configuration per-vhost in JSON, the repo configuration and
    access control is taken from gitolite config.
 
- - Clientside JS, CSS and HTML are provided, along with Markdown parsing
-   and syntax highlighting JS to present the JSON + HTML in a modern and
-   responsive way.  SVG icons provided.  Customizing the css and HTML
-   template encouraged.
+ - CSS and HTML templates are provided along with a C markdown renderer
+   to present the content in a modern and responsive way.  SVG icons
+   provided.  Customizing the css and HTML template encouraged.
 
- - Transparent caching at JSON block level, keyed using global repository ref
-   state... cache invalidated when any ref updated.  ETAG browser cache
-   validation supported as well.  Ref hash based cache invalidation, not time-
-   based, so no cached view more than a few seconds out of date.
+ - Transparent caching at rendered-HTML block level, keyed using global
+   repository ref state and the client locale... cache invalidated when any
+   ref updated.  ETAG browser cache validation supported as well.  Ref hash
+   based cache invalidation, not time-based, so no cached view more than a
+   few seconds out of date.
    
  - Multiple vhosts natively supported; each can have their own template html /
    css and gitolite ACL "user" name for automatic repo permissions
@@ -159,33 +166,34 @@ gitohashi installs its `./assets` directory into
 asset|function
 ---|---
 inconsolata.ttf|Web font for nice monospaced content
-jg2.js|The clientside part that turns the JSON into HTML
-jg2.css|Helper CSS for formatting jg2.js output
+jg2.css|CSS for the server-rendered page markup
 logo.css|CSS SVG Image included by the example template HTML
 gitohashi-custom.css|CSS overrides related to the custom HTML template (normally served from wherever the HTML template is served from)
-highlight.pack.js|Highlight.js script to perform clientside file markup
-github.css|Highlight.js CSS (NB they provide many alternatives...)
-showdown.min.js|Showdown script to perform clientside markdown to HTML
-showdown.min.js.map|Additional information about minified showdown
+github.css|CSS for syntax highlighting output (for when a highlighting solution is added)
 
 Gitohashi also installs an example html template from its `./templates` dir,
-`gitohashi-example.html` into `/usr/local/share/gitohashi/templates`.  This
-is not designed to be directly served, instead the gitohashi vhost is pointed
+`gitohashi-example.html` into `/usr/local/share/gitohashi/templates.  This is
+not designed to be directly served, instead the gitohashi vhost is pointed
 to a customized copy of it adapted with a suitable logo, content and css /
 fonts.
 
-Assuming you want "sandwiched" JSON-in-HTML mode, two places need to know the
-path:
+Two places in the template tell gitohashi where to inject dynamic content:
 
- - you need to inform the library the filepath to the HTML template file in
-   the vhost config struct
+ - `<!-- libjsongit2:meta-description -->` in the head is replaced by a
+   `<meta name="Description" ...>` tag describing the view
+
+ - `<!-- libjsongit2:content -->` (normally placed inside `<div id='result'>`)
+   is replaced by the server-rendered page content
+
+ - you must inform the library the filepath to the HTML template file in the
+   vhost config struct
 
  - you must serve that dir somehow over HTTP so the client browser can get at
    the rest of the assets mentioned in the HTML.  (The HTML is provided
-   directly by gitohashi in sandwich mode, but the other assets are collected
-   by the client browser over HTTP).  The provided HTTP template
-   assumes it's served from the same server at the virtual path
-   `/git/_gitohashi`, but you can change that as needed.
+   directly by gitohashi, but the other assets are collected by the client
+   browser over HTTP).  The provided HTTP template assumes it's served from
+   the same server at the virtual path `/git/_gitohashi`, but you can change
+   that as needed.
 
 Caching policy in your HTTP server for the assets can be relaxed, since they
 will normally only change when gitohashi it updated.
@@ -284,12 +292,14 @@ No referrer information is sent, and since the JSON tells the browser to pick
 up the avatar images from your server, the client finds no references to
 the third-party avatar provider and so no privacy issues.
 
-### Transparent JSON Cache
+### Transparent render cache
 
-Gitohashi has a sophisticated transparent JSON cache.
+Gitohashi has a sophisticated transparent cache of server-rendered HTML.
 
 Cache entries are invalidated when the related repo's refs
 change; gitohashi maintains a hash of all refs in a repo for this purpose.
+The client's Accept-Language locale is part of the cache key, so translated
+pages are cached per-locale.
 
 It means that deprecated repos nobody pushes to will keep their caches
 unless the size limit is reached and the cache content is reaped according to
@@ -304,10 +314,9 @@ users in the cache.
 
 ## Client-side HTTP cache
 
-Assets that may have a safe client-side cache policy (CSS, JS, fonts etc) are
+Assets that may have a safe client-side cache policy (CSS, fonts etc) are
 separated out to their own URL base that may have the relaxed caching policy
-applied to it.  The generated HTML + JSON is never cached and always produced
-live. 
+applied to it.  The generated HTML is always produced live. 
 
 ## ETAG client-side HTTP cache
 
@@ -359,37 +368,19 @@ That means inline (injected) scripts and style are specifically disallowed by
 the default security policy told to the browser by gitohashi when it serves the
 page.  The default CSP is enough to get A+ at https://observatory.mozilla.org .
 
-### Showdown
+### Markdown
 
-Generic markdown is unfortunately sucecptible to XSS attacks, made a lot worse
-by wanting to allow the input to fall back to raw html.
+README and blog markdown is rendered by gitohashi's own small server-side
+markdown renderer.  Raw HTML in the markdown is never passed through: every
+emitted byte is HTML-escaped at render time, which removes the XSS class the
+old client-side "preprocess the dangerous characters" approach had to defend
+against.  Repo-relative image and link URLs are rewritten to /plain/ and
+/tree/ URLs automatically, like the old client-side showdown extension did.
 
-However we don't need that for README.md type applications, so we perform
-the following changes to the markdown input before processing
-
-character|change
----|---
-Ampersand|& a m p ;
-Less than|& l t ; & # 8 2 0 3;
-Greater than|& g t ;
-Percent|& # 3 7 ;
-
-The additional zero-width space after the less-than is to defeat Showdown's
-suicidal desire to interpret the HTML escape sequence & l t ; as a valid, active
-less-than character for opening html tags.
-
-With this the xss test page at ./xss/README.md with several dozen xss variations
-does not render to anything active scriptwise.
+With this the xss test page at ./xss/README.md with several dozen xss
+variations does not render to anything active scriptwise.
 
 See https://warmcat.com/git/gitohashi/tree/xss
-
-### Highlight.js
-
-At least for C highlight, providing the same large set of XSS attacks in a .c is
-unable to do anything on the client, again by globally preprocessing the
-characters critical to the attack variants into escaped forms first.
-
-See https://warmcat.com/git/gitohashi/tree/xss/xss.c
 
 ## Upstreams and licenses
 

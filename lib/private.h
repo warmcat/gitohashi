@@ -58,8 +58,12 @@
  * Bumped to 2 when length-prefixing was added to the cache-key hash so that
  * entries written by older builds (which produced ambiguous keys) are
  * invalidated rather than served against the new, stricter key.
+ *
+ * Bumped to 3 when the cached content for HTML contexts changed from JSON to
+ * server-rendered HTML (and the Accept-Language entered the key), so stale
+ * JSON entries from older builds are not served as HTML.
  */
-#define JG2_JSON_EPOCH 2
+#define JG2_JSON_EPOCH 3
 
 /*
  * Maximum cache base path length we will accept at vhost creation.
@@ -97,8 +101,14 @@ struct jg2_vhost;
 
 #define JG2_HTML_META	 "<!-- libjsongit2:meta-description -->"
 #define JG2_HTML_META_LEN 37
-#define JG2_HTML_DYNAMIC "<!-- libjsongit2:initial-json -->"
-#define JG2_HTML_DYNAMIC_LEN 33
+/*
+ * The template marker is replaced by the server-rendered page content, in
+ * place.  Older templates used a JSON payload marker; the name change makes
+ * stale templates fail loudly at vhost init instead of serving content into
+ * a hidden div.
+ */
+#define JG2_HTML_DYNAMIC "<!-- libjsongit2:content -->"
+#define JG2_HTML_DYNAMIC_LEN 28
 
 
 /*
@@ -266,6 +276,7 @@ enum {
 	HTML_STATE_HTML_HEADER,
 	HTML_STATE_JOB1,
 	HTML_STATE_JSON,
+	HTML_STATE_HTML_DRAIN, /**< spool server-rendered HTML to the wire */
 	HTML_STATE_HTML_TRAILER,
 	HTML_STATE_COMPLETED
 };
@@ -412,6 +423,24 @@ struct jg2_ctx {
 	char *buf, *p, *end;
 	size_t len;
 
+	/*
+	 * Server-side rendering: while a job runs for an HTML context, its
+	 * JSON output is captured into cap_buf (growing) instead of going to
+	 * the wire.  At the end of the job group the capture is parsed and
+	 * rendered into ssr_buf, which is then drained to the wire chunk-wise
+	 * and written into the cache entry; ssr_cache_len is the prefix of
+	 * ssr_buf that is per-context-content (the tail is per-request stats
+	 * that must not be cached).
+	 */
+	char *cap_buf;
+	size_t cap_len;
+	size_t cap_size;
+	unsigned char locale; /**< 0 = en, 1 = ja, 2 = zht, 3 = zhs */
+	char *ssr_buf;
+	size_t ssr_len, ssr_size;
+	size_t ssr_pos;
+	size_t ssr_cache_len;
+
 	/* html */
 	size_t html_pos;
 	int html_state;
@@ -448,6 +477,8 @@ struct jg2_ctx {
 	unsigned int index_open_ro:1;
 	unsigned int no_rider:1;
 	unsigned int diff_open:1; /**< job_commit: the "diff" string is open */
+	unsigned int html_render:1; /**< render job JSON to HTML server-side */
+	unsigned int cap_overflow:1; /**< capture exceeded budget, discard */
 };
 
 struct jg2_global {
@@ -591,5 +622,94 @@ cache_trim_thread_spawn(struct jg2_global *jg2_global);
 
 int
 jg2_oid_lookup(git_repository *repo, git_oid *oid, const char *hex_oid);
+
+/*
+ * jsondom.c
+ */
+
+enum {
+	JG2_JN_OBJ,
+	JG2_JN_ARR,
+	JG2_JN_STR,
+	JG2_JN_NUM,
+	JG2_JN_TRUE,
+	JG2_JN_FALSE,
+	JG2_JN_NULL
+};
+
+struct jg2_jn {
+	struct jg2_jn *next;   /* next sibling */
+	struct jg2_jn *child;  /* OBJ member value / ARR element */
+	char *key;             /* OBJ member key, or NULL */
+	char *str;             /* decoded STR / raw NUM text */
+	size_t str_len;
+	unsigned char type;
+};
+
+struct jg2_jn *
+jg2_json_parse_seq(const char *buf, size_t len, struct lwsac **ac);
+
+const struct jg2_jn *
+jg2_jn_obj_get(const struct jg2_jn *obj, const char *key);
+
+long long
+jg2_jn_ll(const struct jg2_jn *n);
+
+const char *
+jg2_jn_str(const struct jg2_jn *n);
+
+const char *
+jg2_jn_str2(const struct jg2_jn *n, size_t *len);
+
+/*
+ * ssr.c
+ */
+
+/* growing buffer for building HTML / rendered output */
+
+struct jg2_hbuf {
+	char *buf;
+	size_t len;
+	size_t size;
+};
+
+int
+jg2_hbuf_append(struct jg2_hbuf *h, const char *s, size_t len);
+int
+jg2_hbuf_printf(struct jg2_hbuf *h, const char *fmt, ...) JG2_FORMAT(2);
+
+/*
+ * markdown.c
+ */
+
+struct jg2_md_ctx {
+	/* rewrite a repo-relative URL; returns rewritten length or 0 */
+	size_t (*resolve)(void *user, int is_image, const char *url,
+			  size_t len, char *out, size_t out_len);
+	void *user;
+};
+
+int
+jg2_markdown(struct jg2_hbuf *h, const char *md, size_t len,
+	     const struct jg2_md_ctx *mc);
+
+/* accept-language -> locale index, shared by cache key and renderer */
+unsigned char
+jg2_ssr_locale_from_alang(const char *alang);
+
+/* capture plumbing called from jg2_ctx_fill() around each job slice */
+int
+jg2_ssr_capture_begin(struct jg2_ctx *ctx);
+void
+jg2_ssr_capture_end(struct jg2_ctx *ctx, char *wire_buf, char *wire_p,
+		    char *wire_end);
+
+/* render any captured job JSON; set up the drain.  0 = ok */
+int
+jg2_ssr_render_group(struct jg2_ctx *ctx);
+
+/* emit one wire-sized chunk of rendered HTML; returns 0 while more remain */
+int
+jg2_ssr_drain(struct jg2_ctx *ctx);
 
 #endif

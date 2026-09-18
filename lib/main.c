@@ -346,6 +346,14 @@ __jg2_ctx_destroy(struct jg2_ctx *ctx)
 
 	lwsac_use_cached_file_end(&ctx->vhost->html_content);
 
+	free(ctx->cap_buf);
+	ctx->cap_buf = NULL;
+	ctx->cap_len = ctx->cap_size = 0;
+
+	free(ctx->ssr_buf);
+	ctx->ssr_buf = NULL;
+	ctx->ssr_len = ctx->ssr_size = ctx->ssr_pos = 0;
+
 	/*
 	 * closing while an incomplete job is going wouldn't be strange
 	 * (browser page closed, lost connection etc).  Get any active job
@@ -579,6 +587,10 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 	} else
 		ctx->alang[0] = '\0';
 
+	/* the locale both keys the HTML cache and drives the chrome */
+
+	ctx->locale = jg2_ssr_locale_from_alang(ctx->alang);
+
 	jg2_repopath_split(args->repo_path, &ctx->sr);
 
 	/* bots are not allowed to use blame */
@@ -656,6 +668,14 @@ jg2_ctx_create(struct jg2_vhost *vhost, struct jg2_ctx **_ctx,
 		flags &= ~JG2_CTX_FLAG_HTML;
 
 	ctx->flags = flags;
+
+	/*
+	 * HTML contexts render the job JSON into HTML server-side; this is
+	 * decided after naked modes (plain / patch / snapshot / ac) have
+	 * cleared the HTML flag, so those keep their raw passthrough flow.
+	 */
+
+	ctx->html_render = !!(flags & JG2_CTX_FLAG_HTML);
 	ctx->html_state = (flags & JG2_CTX_FLAG_HTML) ? HTML_STATE_HTML_META :
 							HTML_STATE_JOB1;
 
