@@ -86,8 +86,16 @@ job_log(struct jg2_ctx *ctx)
 			CTX_BUF_APPEND("\n]");
 
 			if (ctx->u.obj) {
-				git_commit_parent(&c, ctx->u.commit, 0);
-				if (c) {
+				/*
+				 * c must start NULL: at a root commit
+				 * git_commit_parent() returns GIT_ENOTFOUND
+				 * without touching *out, and dereferencing
+				 * the stale stack slot emits a garbage
+				 * "next" oid or crashes
+				 */
+				c = NULL;
+				if (!git_commit_parent(&c, ctx->u.commit, 0) &&
+				    c) {
 					CTX_BUF_APPEND(", \"next\": ");
 
 					jg2_json_oid(git_commit_id(c), ctx);
