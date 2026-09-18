@@ -79,7 +79,16 @@ job_repos(struct jg2_ctx *ctx)
 
 		pthread_mutex_lock(&ctx->vhost->lock); /* ======== vhost lock */
 
-		if (jg2_acl_check(ctx, p, ctx->acl_user)) {
+		/*
+		 * Same rule as the ctx ACL check in jg2_ctx_create: the
+		 * request is denied only if both the per-context authorized
+		 * name and the vhost's configured acl_user are denied.  This
+		 * makes eg "@all" vhosts show their repos to anonymous
+		 * clients the same as the individual repo pages already do.
+		 */
+
+		if (jg2_acl_check(ctx, p, ctx->acl_user) &&
+		    jg2_acl_check(ctx, p, ctx->vhost->cfg.acl_user)) {
 			pthread_mutex_unlock(&ctx->vhost->lock); /*vhost lock */
 			goto next;
 		}

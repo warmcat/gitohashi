@@ -144,8 +144,16 @@ __jg2_job_hash_visible_repos(struct jg2_ctx *ctx)
 		struct repo_entry_info *rei = lp_to_rei(lp, next);
 		char *p = (char *)(rei + 1);
 
-		if (!jg2_acl_check(ctx, p, ctx->acl_user))
-			jg2_md5_upd_lenprefixed(vh, ctx->md5_ctx, p, strlen(p));
+		/*
+		 * Match the visibility rule used for the repolist itself
+		 * (both the ctx authorized name and the vhost acl_user must
+		 * deny), so the cache key tracks what the list would show.
+		 */
+
+		if (jg2_acl_check(ctx, p, ctx->acl_user) &&
+		    jg2_acl_check(ctx, p, ctx->vhost->cfg.acl_user))
+			jg2_md5_upd_lenprefixed(vh, ctx->md5_ctx, p,
+						strlen(p));
 
 		lws_list_ptr_advance(lp);
 	}
