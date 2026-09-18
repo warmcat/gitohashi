@@ -239,7 +239,7 @@ install(FILES assets/github.css
 	      assets/gitohashi-custom.css
 	      assets/highlight.pack.js
 	      assets/jg2.css
-	      assets/jg2.js
+	      assets/jg2-login.js
 	      assets/favicon.ico
 	      assets/inconsolata.ttf
 	      assets/showdown.min.js
