@@ -1,0 +1,38 @@
+threadpool: destroy pool before jg2 vhost at PROTOCOL_DESTROY, fixes F-001
+
+From: Andy Green <andy@warmcat.com>
+
+Workers still inside jg2_ctx_fill() walk ctx->vhost, and the done-queue
+reap at threadpool destroy runs each task cleanup, which destroys its
+jg2_ctx and locks vhost->lock.  Freeing the vhost (incl.
+git_libgit2_shutdown) before those joins and cleanups was a shutdown-
+window UAF for any in-flight job, e.g. an unauthenticated long blame
+held open across a daemon restart.  Join and reap first, then tear the
+vhost down.
+---
+ src/protocol_gitohashi.c |   10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/protocol_gitohashi.c b/src/protocol_gitohashi.c
+index dc9e24a..a200401 100644
+--- a/src/protocol_gitohashi.c
++++ b/src/protocol_gitohashi.c
+@@ -455,9 +455,17 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
+ 			lwsl_err("%s: NULL vhd\n", __func__);
+ 			break;;
+ 		}
+-		jg2_vhost_destroy(vhd->jg2_vhost);
++		/*
++		 * A worker still inside jg2_ctx_fill() is walking
++		 * ctx->vhost, and the threadpool done-queue reap destroys
++		 * each task's jg2_ctx, which locks vhost->lock.  The
++		 * threadpool destroy joins the workers and runs those
++		 * cleanups, so it has to complete while the vhost is still
++		 * alive -- only then can the vhost itself go away.
++		 */
+ 		lws_threadpool_finish(vhd->tp);
+ 		lws_threadpool_destroy(vhd->tp);
++		jg2_vhost_destroy(vhd->jg2_vhost);
+ 		vhd->jg2_vhost = NULL;
+ 		break;
+ 

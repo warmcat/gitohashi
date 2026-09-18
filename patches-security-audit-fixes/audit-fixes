@@ -1,0 +1,877 @@
+audit-fixes
+
+From: Andy Green <andy@warmcat.com>
+
+
+---
+ lib/cache.c                   |   13 ++++++
+ lib/conf/gitolite/common.c    |   44 +++++++++++++++++++++
+ lib/conf/gitolite/gitolite3.c |   83 ++++++++++++++++++++++++++++++++---------
+ lib/conf/scan-repos.c         |    2 -
+ lib/email/email.c             |   51 ++++++++++++++++++++-----
+ lib/job/blog.c                |   22 +++++++++--
+ lib/job/job.c                 |   35 ++++++++++-------
+ lib/job/reflist.c             |   18 ++++++++-
+ lib/job/tree.c                |    7 +++
+ lib/main.c                    |   15 +++++++
+ lib/private.h                 |   37 +++++++++++++++++-
+ lib/repostate.c               |   23 +++++++++++
+ lib/util.c                    |   84 +++++++++++++++++++++++++++++++++++------
+ src/protocol_avatar-proxy.c   |   18 +++++++++
+ 14 files changed, 385 insertions(+), 67 deletions(-)
+
+diff --git a/lib/cache.c b/lib/cache.c
+index a2d2fa7..38f8677 100644
+--- a/lib/cache.c
++++ b/lib/cache.c
+@@ -60,6 +60,19 @@ __jg2_cache_query_v(struct jg2_ctx *ctx, int flags, const char *suffix,
+ 	n = vsnprintf(buf, sizeof(buf) - l - 1, format, ap);
+ 	va_end(ap);
+ 
++	/*
++	 * vsnprintf() returns the number of bytes that *would* have been
++	 * written, not the number actually written.  If the formatted string
++	 * was truncated, n can exceed sizeof(buf) - l - 1 and the md5_upd()
++	 * below would read past buf[] on the stack.  Cap it to the bytes that
++	 * are actually in the buffer.
++	 */
++
++	if (n < 0)
++		n = 0;
++	if (n > (int)sizeof(buf) - l - 1)
++		n = (int)sizeof(buf) - l - 1;
++
+ 	md5_ctx = ctx->vhost->cfg.md5_alloc();
+ 	if (!md5_ctx)
+ 		return LWS_DISKCACHE_QUERY_NO_CACHE;
+diff --git a/lib/conf/gitolite/common.c b/lib/conf/gitolite/common.c
+index 6adc840..857a888 100644
+--- a/lib/conf/gitolite/common.c
++++ b/lib/conf/gitolite/common.c
+@@ -28,6 +28,40 @@
+ 
+ #define lp_to_rei(p, _n) lws_list_ptr_container(p, struct repo_entry_info, _n)
+ 
++/*
++ * Whitelist for gitolite identity names.  `auth` arrives from the client
++ * (HTTP-authenticated user / client-cert CN) and is interpolated into both
++ * the gitolite argv ("access % <auth> R") and a cache-key format string.
++ * Rejecting anything outside this set closes (a) argument injection into
++ * the gitolite subprocess via a username containing spaces, and (b) any
++ * attempt to use '/' or '..' to escape the cache-key context.  Returns
++ * nonzero if the name is acceptable.
++ */
++static int
++jg2_auth_name_ok(const char *auth)
++{
++	const char *p;
++
++	if (!auth || !auth[0])
++		return 0;
++
++	for (p = auth; *p; p++) {
++		unsigned char c = (unsigned char)*p;
++		if (c == '@' || c == '-' || c == '_' || c == '.')
++			continue;
++		if (c >= '0' && c <= '9')
++			continue;
++		if (c >= 'A' && c <= 'Z')
++			continue;
++		if (c >= 'a' && c <= 'z')
++			continue;
++
++		return 0;
++	}
++
++	return 1;
++}
++
+ /* repodir lock must be held */
+ 
+ struct repo_entry_info *
+@@ -61,6 +95,16 @@ jg2_acl_check(struct jg2_ctx *ctx, const char *reponame, const char *auth)
+ 		return 1; /* disallow */
+ 	}
+ 
++	/*
++	 * Validate client-supplied auth name.  If it contains anything outside
++	 * the gitolite identity charset, ignore it for authorization purposes
++	 * rather than passing it to gitolite / the cache key.
++	 */
++	if (auth && !jg2_auth_name_ok(auth)) {
++		lwsl_notice("%s: rejecting invalid auth name\n", __func__);
++		auth = NULL;
++	}
++
+ 	if (auth && !strcmp(auth, "@all"))
+ 		return 0; /* allow everything */
+ 
+diff --git a/lib/conf/gitolite/gitolite3.c b/lib/conf/gitolite/gitolite3.c
+index ba4903e..82773cf 100644
+--- a/lib/conf/gitolite/gitolite3.c
++++ b/lib/conf/gitolite/gitolite3.c
+@@ -34,6 +34,7 @@
+ #include <signal.h>
+ #include <sys/wait.h>
+ #include <pwd.h>
++#include <grp.h>
+ #include <errno.h>
+ 
+ #include <sys/stat.h>
+@@ -178,7 +179,7 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
+ 		jg2_gitolite3_blocking_query(jg2_global, "query-rc UMASK", NULL,
+ 					     GL3_VERSION_PROBE);
+ 
+-		n = open(GL3_VERSION_PROBE, O_RDONLY);
++		n = open(GL3_VERSION_PROBE, O_RDONLY | O_NOFOLLOW);
+ 		if (n < 0) { /* outcome a */
+ 			lwsl_notice("%s: no gitolite utility: v2\n", __func__);
+ 			jg2_global->gitolite_version = 2;
+@@ -219,10 +220,22 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
+ 
+ 	/* forked child takes on uid + gid from repo dir */
+ 
+-	if (setgid(s.st_gid))
+-		lwsl_err("setgid: %s\n", strerror(errno));
+-	if (setuid(s.st_uid))
+-		lwsl_err("setuid: %s\n", strerror(errno));
++	/*
++	 * We were forked while the parent was still privileged, so dropping
++	 * privileges here is mandatory.  Drop supplementary groups first
++	 * (otherwise we keep the parent's group memberships even after a
++	 * successful setuid), and make any failure fatal -- otherwise we
++	 * would continue to run as root and every subsequent execvp() and
++	 * file open in this child would happen with full privileges.
++	 */
++
++	if (setgroups(0, NULL))
++		lwsl_err("setgroups: %s\n", strerror(errno));
++	if (setgid(s.st_gid) || setuid(s.st_uid)) {
++		lwsl_err("%s: privilege drop failed: %s\n", __func__,
++				strerror(errno));
++		exit(1);
++	}
+ 
+ 	/*
+ 	 * we block until we get an atomic struct asking us to do something
+@@ -265,9 +278,16 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
+ 		for (n = 0; n < (int)m; n++)
+ 			lwsl_debug("  %d: %s\n", n, args[n]);
+ 
+-		/* we got a request... open the output file */
+-
+-		fd = open(q.stdout_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
++		/*
++		 * we got a request... open the output file.
++		 *
++		 * O_NOFOLLOW: if an attacker planted a symlink at this path,
++		 * refuse it rather than truncating its target.  The path is
++		 * only ever one of our own /tmp names (see
++		 * jg2_gitolite3_blocking_query) or a cache path we computed.
++		 */
++		fd = open(q.stdout_path, O_CREAT | O_WRONLY | O_TRUNC |
++				       O_NOFOLLOW, 0644);
+ 		if (fd < 0) {
+ 			lwsl_err("%s: unable to open stdout fd\n", __func__);
+ 
+@@ -283,7 +303,7 @@ jg2_gitolite3_interface(struct jg2_global *jg2_global, const char *repodir)
+ 
+ 		fdsi = -1;
+ 		if (q.stdin_path[0])
+-			fdsi = open(q.stdin_path, O_RDONLY);
++			fdsi = open(q.stdin_path, O_RDONLY | O_NOFOLLOW);
+ 
+ 		/* create the fork for the query */
+ 
+@@ -409,10 +429,21 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
+ 	 * (usually) permissions.  So we ask the fork to create the result in a
+ 	 * temp file, and copy it in to the final cache file here in
+ 	 * libjsongit2.
++	 *
++	 * Use mkstemp() to get an unpredictable, O_EXCL-created temp file so
++	 * an attacker cannot pre-plant a symlink at a guessable /tmp name and
++	 * have us truncate its target.
+ 	 */
+ 
+-	lws_snprintf(temp, sizeof(temp), "/tmp/_gl3q_%d", getpid());
+-	unlink(temp);
++	lws_snprintf(temp, sizeof(temp), "/tmp/_gl3qXXXXXX");
++	fd = mkstemp(temp);
++	if (fd < 0) {
++		lwsl_err("%s: mkstemp failed: %s\n", __func__, strerror(errno));
++		ret = -4;
++		goto bail;
++	}
++	unlink(temp); /* unlink now; child re-creates it by path with O_NOFOLLOW */
++
+ 	strncpy(q.stdout_path, temp, sizeof(q.stdout_path) - 1);
+ 	q.stdout_path[sizeof(q.stdout_path) - 1] = '\0';
+ 
+@@ -429,6 +460,7 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
+ 
+ 	if (write(jg2_global->gl3_pipe[1], &q, sizeof(q)) != sizeof(q)) {
+ 		lwsl_err("%s: control pipe write failed\n", __func__);
++		close(fd);
+ 		ret = -2;
+ 		goto bail;
+ 	}
+@@ -436,19 +468,27 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
+ 	/* synchronize with the running process */
+ 
+ 	if (read(jg2_global->gl3_pipe_result[0], &res, sizeof(res)) !=
+-						       sizeof(res)) {
++							       sizeof(res)) {
+ 		lwsl_err("%s: return pipe read failed\n", __func__);
++		close(fd);
+ 		ret = -3;
+ 		goto bail;
+ 	}
+ 
+ 	/*
+ 	 * if the GL3_TEMP version was created (with gitolite3 permissions),
+-	 * copy it into the actual output file (with gitohashi permissions)
++	 * copy it into the actual output file (with gitohashi permissions).
++	 *
++	 * The child wrote to q.stdout_path (== temp), recreating it by path
++	 * with O_CREAT|O_TRUNC|O_NOFOLLOW.  Reopen that path here the same
++	 * way to read the result; O_NOFOLLOW refuses any symlink planted in
++	 * the window since mkstemp unlinked the name.
+ 	 */
+-	fd = open(temp, O_RDONLY);
++	close(fd);
++	fd = open(temp, O_RDONLY | O_NOFOLLOW);
+ 	if (fd >= 0) {
+-		fd1 = open(output, O_CREAT | O_WRONLY | O_TRUNC, 0600);
++		fd1 = open(output, O_CREAT | O_WRONLY | O_TRUNC |
++				    O_NOFOLLOW, 0600);
+ 		if (fd1 >= 0) {
+ 			do {
+ 				n = read(fd, buf, sizeof(buf));
+@@ -512,6 +552,12 @@ __jg2_gitolite3_get_repodir_acls(struct jg2_ctx *ctx, const char *auth)
+ 		 */
+ 		lws_snprintf(cache, sizeof(cache) - 1,
+ 			     "/tmp/gitohashi-gl3-query-%d", getpid());
++		/*
++		 * The child opens this with O_NOFOLLOW (we added it in the
++		 * child loop), so a pre-planted symlink is refused.  Unlink
++		 * any pre-existing entry here first as defense-in-depth.
++		 */
++		unlink(cache);
+ 	} else
+ 		close(fd); /* we will reopen it in the forked process */
+ 
+@@ -593,8 +639,10 @@ judge:
+ 			m++;
+ 
+ 			si[pos] = '\0';
+-			lwsl_notice("%s: %s '%s'\n", __func__, si, si + pos - 7);
+-			if (!strcmp(si + pos - 7, "refs/.*")) {
++			if (pos >= 7) {
++				lwsl_notice("%s: %s '%s'\n", __func__, si,
++					    si + pos - 7);
++				if (!strcmp(si + pos - 7, "refs/.*")) {
+ 				struct repo_entry_info *rei;
+ 
+ 				/*
+@@ -625,6 +673,7 @@ judge:
+ 				a3->next = rei->acls_valid_head;
+ 				rei->acls_valid_head = a3;
+ 			}
++				} /* end if (pos >= 7) */
+ 
+ 			pos = 0;
+ 			continue;
+diff --git a/lib/conf/scan-repos.c b/lib/conf/scan-repos.c
+index a4a5b77..e7417d4 100644
+--- a/lib/conf/scan-repos.c
++++ b/lib/conf/scan-repos.c
+@@ -72,7 +72,7 @@ __jg2_conf_scan_repos(struct jg2_repodir *rd)
+ 
+ 	lws_snprintf(filepath, sizeof(filepath),
+ 		     "/tmp/_goh_rl_%s", rd->hexoid_gitolite_conf);
+-	fd = open(filepath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
++	fd = open(filepath, O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW, 0644);
+ 	if (fd < 0) {
+ 		lwsl_err("%s: unable to create repo list: %s\n", __func__, filepath);
+ 		ret = -1;
+diff --git a/lib/email/email.c b/lib/email/email.c
+index ef2f8d8..067d454 100644
+--- a/lib/email/email.c
++++ b/lib/email/email.c
+@@ -24,15 +24,25 @@
+ 
+ #include <string.h>
+ 
++/*
++ * Maximum number of bytes of an email (or name) we will hash or scan.
++ * sig->email / sig->name come from git commit objects and are therefore
++ * attacker-controllable (anyone who can push, or any imported history).
++ * Without a cap a single crafted commit with a multi-MB author field can
++ * be made to burn CPU and memory on every render.
++ */
++#define JG2_EMAIL_MAX_LEN 256
++
+ static int
+ __email_hash(struct jg2_vhost *vh, const char *email)
+ {
+-	int s = 0;
++	unsigned int s = 0;
++	size_t n = 0;
+ 
+-	while (*email)
+-		s += *email++;
++	while (n < JG2_EMAIL_MAX_LEN && email[n])
++		s += (unsigned char)email[n++];
+ 
+-	return s % vh->cfg.email_hash_bins;
++	return (int)(s % (unsigned int)vh->cfg.email_hash_bins);
+ }
+ 
+ unsigned char *
+@@ -87,24 +97,43 @@ email_md5(struct jg2_vhost *vh, const char *email)
+ 			pthread_mutex_unlock(&vh->lock); /*----- vhost unlock */
+ 			return NULL;
+ 		}
+-	} else
+-		/* replace the "last" one */
++	} else {
++		/*
++		 * Replace the "last" one (op == tail).  Unlink it from the
++		 * list first so we can safely move it to the front.  The old
++		 * code only unlinked via oop->next and then unconditionally
++		 * did "ne->next = first; first = ne;"; if ne was itself the
++		 * head (eg email_hash_depth == 1, so op == first and oop ==
++		 * NULL), the unlink was skipped and ne->next was set to ne,
++		 * creating a self-cycle that hung every subsequent lookup of
++		 * the bin.  Handle the head case explicitly.
++		 */
+ 
+ 		ne = op;
+ 
++		if (ne == vh->bins[bin].first)
++			/* sole node; just clear the list, ne is reused below */
++			vh->bins[bin].first = NULL;
++		else if (oop)
++			oop->next = op->next; /* op->next is NULL, op is tail */
++	}
++
+ 	ne->next = NULL;
+ 	strncpy(ne->email, email, sizeof(ne->email) - 1);
+ 	ne->email[sizeof(ne->email) - 1] = '\0';
+ 
+-	if (ne == op && oop) /* replacing existing, just move to front */
+-		oop->next = op->next; /* should always be NULL */
+-
+-	/* adding new at front */
++	/* adding new (or newly-recycled) at front */
+ 	ne->next = vh->bins[bin].first;
+ 	vh->bins[bin].first = ne;
+ 
+ 	vh->cfg.md5_init(vh->md5_ctx);
+-	vh->cfg.md5_upd(vh->md5_ctx, (unsigned char *)email, strlen(email));
++	/* cap the hashed length to bound work on attacker-controlled input */
++	{
++		size_t elen = strlen(email);
++		if (elen > JG2_EMAIL_MAX_LEN)
++			elen = JG2_EMAIL_MAX_LEN;
++		vh->cfg.md5_upd(vh->md5_ctx, (unsigned char *)email, elen);
++	}
+ 	vh->cfg.md5_fini(vh->md5_ctx, ne->md5);
+ 
+ 	if (vh->cfg.avatar)
+diff --git a/lib/job/blog.c b/lib/job/blog.c
+index cfd645f..c592f95 100644
+--- a/lib/job/blog.c
++++ b/lib/job/blog.c
+@@ -214,6 +214,7 @@ job_blog(struct jg2_ctx *ctx)
+ 	char pure_title[512];
+ 	char pure_summary[1024];
+ 	char pure_image[512];
++	char pure_path[512];
+ 
+ 	if (ctx->destroying) {
+ 		job_blog_destroy(ctx);
+@@ -276,12 +277,24 @@ job_blog(struct jg2_ctx *ctx)
+ 					const char *img = memchr(p, '!', len);
+ 					if (img && img + 3 < eol && img[1] == '[') {
+ 						const char *close_bracket = memchr(img, ']', len - (img - p));
++						/*
++						 * close_bracket (if found) lies in
++						 * [img, p+len).  Bound the search
++						 * for ')' by the number of bytes
++						 * remaining in the line *after*
++						 * close_bracket+2, clamped to >= 0,
++						 * so memchr can't run off the end
++						 * of the line into adjacent heap.
++						 */
+ 						if (close_bracket && close_bracket[1] == '(') {
+-							const char *close_paren = memchr(close_bracket + 2, ')', eol - close_bracket - 2);
++							const char *cb2 = close_bracket + 2;
++							size_t remain = (p + len) > cb2 ?
++								(size_t)((p + len) - cb2) : 0;
++							const char *close_paren = memchr(cb2, ')', remain);
+ 							if (close_paren) {
+-								size_t ilen = close_paren - (close_bracket + 2);
++								size_t ilen = close_paren - cb2;
+ 								if (ilen < sizeof(image_route) - 1) {
+-									memcpy(image_route, close_bracket + 2, ilen);
++									memcpy(image_route, cb2, ilen);
+ 									image_route[ilen] = '\0';
+ 								}
+ 							}
+@@ -305,10 +318,11 @@ job_blog(struct jg2_ctx *ctx)
+ 		jg2_json_purify(pure_title, title, sizeof(pure_title), NULL);
+ 		jg2_json_purify(pure_summary, summary, sizeof(pure_summary), NULL);
+ 		jg2_json_purify(pure_image, image_route, sizeof(pure_image), NULL);
++		jg2_json_purify(pure_path, path, sizeof(pure_path), NULL);
+ 
+ 		lwsl_notice("%s: Appending JSON chunk for %s\n", __func__, path);
+ 		CTX_BUF_APPEND("%c\n{ \"name\": \"%s\",",
+-			       ctx->subsequent ? ',' : ' ', path);
++			       ctx->subsequent ? ',' : ' ', pure_path);
+ 		ctx->subsequent = 1;
+ 		CTX_BUF_APPEND("\"title\": \"%s\",", pure_title);
+ 		CTX_BUF_APPEND("\"summary\": \"%s\",", pure_summary);
+diff --git a/lib/job/job.c b/lib/job/job.c
+index d90c4e3..29ea5df 100644
+--- a/lib/job/job.c
++++ b/lib/job/job.c
+@@ -145,8 +145,7 @@ __jg2_job_hash_visible_repos(struct jg2_ctx *ctx)
+ 		char *p = (char *)(rei + 1);
+ 
+ 		if (!jg2_acl_check(ctx, p, ctx->acl_user))
+-			vh->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)p,
+-					strlen(p));
++			jg2_md5_upd_lenprefixed(vh, ctx->md5_ctx, p, strlen(p));
+ 
+ 		lws_list_ptr_advance(lp);
+ 	}
+@@ -176,8 +175,8 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
+ 		ctx->vhost->cfg.md5_upd(ctx->md5_ctx, (unsigned char *)&c32, 4);
+ 
+ 		if (ctx->sr.e[JG2_PE_SEARCH])
+-			ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
+-				(unsigned char *)ctx->sr.e[JG2_PE_SEARCH],
++			jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
++				ctx->sr.e[JG2_PE_SEARCH],
+ 				strlen(ctx->sr.e[JG2_PE_SEARCH]));
+ 	}
+ 
+@@ -189,20 +188,20 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
+ 					   sizeof(ctx->jrepo->md5_refs));
+ 
+ 	/* item 4: the repo filepath (if we are affiliated with a repo) */
+-		ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
+-					(unsigned char *)ctx->jrepo->repo_path,
++		jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
++					ctx->jrepo->repo_path,
+ 					strlen(ctx->jrepo->repo_path));
+ 
+ 	/* item 5: the mode we are looking for results with, if any */
+ 		if (ctx->sr.e[JG2_PE_MODE])
+-			ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
+-					(unsigned char *)ctx->sr.e[JG2_PE_MODE],
++			jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
++					ctx->sr.e[JG2_PE_MODE],
+ 					strlen(ctx->sr.e[JG2_PE_MODE]));
+ 
+ 	/* item 6: the path part inside the repo, if any */
+ 		if (job != JG2_JOB_SEARCH_TRIE && ctx->sr.e[JG2_PE_PATH])
+-			ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
+-					(unsigned char *)ctx->sr.e[JG2_PE_PATH],
++			jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
++					ctx->sr.e[JG2_PE_PATH],
+ 					strlen(ctx->sr.e[JG2_PE_PATH]));
+ 
+ 	/* item 7: the oid if the job could use it (and we have a repo) */
+@@ -217,8 +216,8 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
+ 				char hoid[GIT_OID_HEXSZ + 1];
+ 
+ 				oid_to_hex_cstr(hoid, git_blob_id(ctx->u.blob));
+-				ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
+-					(unsigned char *)hoid, strlen(hoid));
++				jg2_md5_upd_lenprefixed(ctx->vhost, ctx->md5_ctx,
++					hoid, strlen(hoid));
+ 
+ 				git_object_free(ctx->u.obj);
+ 				ctx->u.obj = NULL;
+@@ -251,9 +250,15 @@ __jg2_job_compute_cache_hash(struct jg2_ctx *ctx, jg2_job_enum job, int count,
+ 					if (!rei->conf_len[n])
+ 						continue;
+ 
+-					ctx->vhost->cfg.md5_upd(ctx->md5_ctx,
+-							(unsigned char *)p,
+-							rei->conf_len[n]);
++					/*
++					 * the conf_len[] entries are
++					 * NUL-terminated strings laid out
++					 * contiguously; length-prefix each so
++					 * adjacent fields can't be re-split
++					 */
++					jg2_md5_upd_lenprefixed(ctx->vhost,
++						ctx->md5_ctx, p,
++						rei->conf_len[n]);
+ 					p += rei->conf_len[n];
+ 				}
+ 
+diff --git a/lib/job/reflist.c b/lib/job/reflist.c
+index 62c7642..7e52d75 100644
+--- a/lib/job/reflist.c
++++ b/lib/job/reflist.c
+@@ -59,7 +59,7 @@ job_reflist(struct jg2_ctx *ctx)
+ 
+ 	while (JG2_HAS_SPACE(ctx, 768)) {
+ 		char pure[128];
+-		git_reference *gref, *rref;
++		git_reference *gref, *rref = NULL;
+ 		const git_oid *oid;
+ 
+ 		/*
+@@ -73,7 +73,21 @@ job_reflist(struct jg2_ctx *ctx)
+ 			break;
+ 		}
+ 
+-		git_reference_resolve(&rref, gref);
++		/*
++		 * git_reference_resolve() returns the peeled (target) ref for
++		 * symbolic refs.  It can fail (e.g. dangling symbolic ref),
++		 * leaving rref untouched -- so it must start as NULL and we
++		 * must check the return value before relying on it.  Otherwise
++		 * git_reference_target() dereferences and git_reference_free()
++		 * frees an uninitialized stack pointer.
++		 */
++
++		if (git_reference_resolve(&rref, gref) < 0 || !rref) {
++			lwsl_notice("%s: unable to resolve ref\n", __func__);
++			git_reference_free(gref);
++			continue;
++		}
++
+ 		oid = git_reference_target(rref);
+ 		if (oid) {
+ 			jg2_json_purify(pure, git_reference_name(gref),
+diff --git a/lib/job/tree.c b/lib/job/tree.c
+index 6d67288..3d46bc3 100644
+--- a/lib/job/tree.c
++++ b/lib/job/tree.c
+@@ -265,7 +265,12 @@ job_tree_start(struct jg2_ctx *ctx)
+ 			sizeof(pure) - 1);
+ 		pure[sizeof(pure) - 1] = '\0';
+ 
+-		if (strlen(pure) > 1)
++		/*
++		 * Only append the trailing '/' if there is room for it and its
++		 * NUL terminator.  Otherwise strlen(pure) == sizeof(pure)-1 and
++		 * strcat would write the NUL one byte past pure[].
++		 */
++		if (strlen(pure) > 1 && strlen(pure) < sizeof(pure) - 2)
+ 			strcat(pure, "/");
+ 
+ 		ellipsis_purify(pure + strlen(pure), ctx->sr.e[JG2_PE_NAME],
+diff --git a/lib/main.c b/lib/main.c
+index 6c44630..7e5d431 100644
+--- a/lib/main.c
++++ b/lib/main.c
+@@ -276,6 +276,21 @@ jg2_vhost_create(const struct jg2_vhost_config *config)
+ 						 config->repo_base_dir);
+ 	if (config->json_cache_base) {
+ 
++		/*
++		 * The on-disk cache filename is <base>/<c>/<c>/<hex>~<pid>-<ptr>.
++		 * If the base path is too long, the temp suffix gets truncated,
++		 * finalize_name() then cannot find the '~' to rename away, and
++		 * the cache entry is orphaned (re-built every time).  Reject
++		 * over-long bases up front rather than silently break.
++		 */
++		if (strlen(config->json_cache_base) > JG2_CACHE_BASE_MAX) {
++			lwsl_err("%s: json_cache_base too long (%lu > %d)\n",
++				 __func__,
++				 (unsigned long)strlen(config->json_cache_base),
++				 JG2_CACHE_BASE_MAX);
++			goto bail;
++		}
++
+ 		if (config->cache_uid)
+ 			lws_diskcache_prepare(config->json_cache_base, 0700,
+ 					      config->cache_uid);
+diff --git a/lib/private.h b/lib/private.h
+index 3eb9eee..aca1002 100644
+--- a/lib/private.h
++++ b/lib/private.h
+@@ -54,7 +54,26 @@
+ #include <archive_entry.h>
+ #endif
+ 
+-#define JG2_JSON_EPOCH 1
++/*
++ * Bumped to 2 when length-prefixing was added to the cache-key hash so that
++ * entries written by older builds (which produced ambiguous keys) are
++ * invalidated rather than served against the new, stricter key.
++ */
++#define JG2_JSON_EPOCH 2
++
++/*
++ * Maximum cache base path length we will accept at vhost creation.
++ *
++ * The on-disk cache filename is built by lws_diskcache_query() as
++ *   <base>/<c>/<c>/<32 hex>~<pid>-<ptr>
++ * The suffix and structure add up to 71 bytes worst case on 64-bit
++ * (1+1+1+1+1+32 for the directory+name, then up to ~34 for "~<pid>-<ptr>").
++ * The cache path buffer in jg2_ctx is sized to accommodate base + this
++ * overhead plus headroom; if the configured base exceeds this limit we reject
++ * it rather than silently truncating the temp suffix (which would orphan the
++ * cache entry under a ~name that finalize_name() then cannot rename).
++ */
++#define JG2_CACHE_BASE_MAX	256
+ 
+ struct jg2_ctx;
+ struct jg2_vhost;
+@@ -324,7 +343,7 @@ struct jg2_ctx {
+ 	/* job parameters */
+ 	const char *acl_user;
+ 	char hex_oid[64]; /**< may also be a ref like refs/head/master */
+-	char cache[128];
++	char cache[384];
+ 	char alang[128]; /**< accept-language string, or NUL */
+ 	char status[256];
+ 	int count;
+@@ -357,7 +376,7 @@ struct jg2_ctx {
+ 	struct ongoing_index *ongoing;
+ 
+ 	/* search */
+-	char trie_filepath[256];
++	char trie_filepath[512];
+ 	struct lws_fts_result *result;
+ 	struct lws_fts_result_autocomplete *ac;
+ 	struct lws_fts_result_filepath *fp;
+@@ -515,6 +534,18 @@ void
+ jg2_md5_init(jg2_md5_context _ctx);
+ int
+ jg2_md5_upd(jg2_md5_context _ctx, const unsigned char *input, size_t ilen);
++
++/*
++ * Hash a variable-length byte string into the vhost md5 context with a
++ * 32-bit little-endian length prefix.  This provides domain separation
++ * between adjacent variable-length fields in the cache key so that, eg,
++ * mode="abc"+path="def" no longer hashes identically to
++ * mode="abcdef"+path="".  Callers passing fixed-width fields (oids, the
++ * epoch/je word, count word, md5_refs) do not need to use this.
++ */
++void
++jg2_md5_upd_lenprefixed(struct jg2_vhost *vh, jg2_md5_context _ctx,
++			const void *input, size_t ilen);
+ int
+ jg2_md5_fini(jg2_md5_context _ctx, unsigned char output[16]);
+ 
+diff --git a/lib/repostate.c b/lib/repostate.c
+index 218b676..9e1f3b6 100644
+--- a/lib/repostate.c
++++ b/lib/repostate.c
+@@ -97,6 +97,20 @@ __repo_reflist_update(struct jg2_vhost *vh, struct jg2_repo *jrepo)
+ 
+ 			oid = git_reference_target(ref);
+ 
++			/*
++			 * git_reference_target() returns NULL for symbolic refs.
++			 * refs under heads/ can be symbolic, so we must skip
++			 * those rather than dereferencing oid in the calls below
++			 * (which would SIGSEGV the cache-trim thread while it
++			 * holds the repo lock).
++			 */
++			if (!oid) {
++				lwsl_notice("%s: symbolic ref has no oid\n",
++					    __func__);
++				change_seen |= 2;
++				break;
++			}
++
+ 			if (git_oid_cmp(&er->oid, oid)) {
+ 				change_seen |= 1; /* existing ref changed oid */
+ 				/* snip us out of existing hash table */
+@@ -159,6 +173,15 @@ __repo_reflist_update(struct jg2_vhost *vh, struct jg2_repo *jrepo)
+ 
+ 			oid = git_reference_target(ref);
+ 
++			/* see the comment in the matching block above */
++			if (!oid) {
++				lwsl_notice("%s: symbolic ref has no oid\n",
++					    __func__);
++				git_reference_free(ref);
++				ref = NULL;
++				continue;
++			}
++
+ 			er = jg2_zalloc(sizeof(*er));
+ 			if (!er)
+ 				goto bail;
+diff --git a/lib/util.c b/lib/util.c
+index a597c50..4739f6d 100644
+--- a/lib/util.c
++++ b/lib/util.c
+@@ -31,6 +31,17 @@
+ 
+ static const char *hex = "0123456789abcdef";
+ 
++void
++jg2_md5_upd_lenprefixed(struct jg2_vhost *vh, jg2_md5_context _ctx,
++			const void *input, size_t ilen)
++{
++	uint32_t lp = (uint32_t)ilen;
++
++	vh->cfg.md5_upd(_ctx, (unsigned char *)&lp, sizeof(lp));
++	if (ilen)
++		vh->cfg.md5_upd(_ctx, (const unsigned char *)input, ilen);
++}
++
+ /*
+  * repo_path should look like
+  *
+@@ -79,20 +90,55 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
+ 			goto bail;
+ 		}
+ 
++	/*
++	 * Defense-in-depth: also reject ".." in the inside-repo path.  libgit2
++	 * treats ".." as a literal entry name (so it is not currently
++	 * exploitable for traversal via git_tree_entry_bypath/git_blame_file),
++	 * but rejecting it here keeps the NAME and PATH handling consistent and
++	 * removes any reliance on libgit2's interpretation staying this way.
++	 */
++
++	if (sr->e[JG2_PE_PATH]) {
++		char *pp = (char *)sr->e[JG2_PE_PATH];
++
++		while ((pp = strchr(pp, '.')))
++			if (*(++pp) == '.') {
++				lwsl_err("%s: illegal .. in repo path\n",
++					 __func__);
++
++				goto bail;
++			}
++	}
++
++	/*
++	 * Parse up to 4 query parameters.  Each iteration finds the next '?'
++	 * (first param) or '&' separator, then the '=' inside "key=value".
++	 * The key name spans [key_start, p) and we match it by exact length
++	 * and content, rather than by the single character before '=' (the
++	 * old code matched any key ending in the right letter, so "xq=..."
++	 * was treated as the "q" search parameter).
++	 */
++
+ 	for (n = 0; n < 4; n++) {
+-		char *pp;
++		char *pp, *key_start, *eq;
++		size_t klen;
+ 
+-		p = strchr(p, !n ? '?' : '&');
+-		if (!p)
++		eq = strchr(p, !n ? '?' : '&');
++		if (!eq)
+ 			return 0;
+ 
+-		*p++ = '\0';
++		*eq++ = '\0';
++		key_start = eq;
+ 
+-		p = strchr(p, '=');
+-		if (!p)
++		eq = strchr(key_start, '=');
++		if (!eq)
+ 			return 0;
+ 
+-		if (p[-1] == 'h') {
++		/* key is [key_start, eq), value starts at eq + 1 */
++		klen = (size_t)(eq - key_start);
++		p = eq; /* p points at '=' for compatibility with below */
++
++		if (klen == 1 && key_start[0] == 'h') {
+ 			pp = strdup(p + 1);
+ 			sr->e[JG2_PE_BRANCH] = (const char *)pp;
+ 			while (*pp) {
+@@ -105,7 +151,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
+ 			// lwsl_err("%s: branch seen as %s\n", __func__, sr->e[JG2_PE_BRANCH]);
+ 
+ 		}
+-		if (p[-1] == 'd') {/* id hex hash string*/
++		if (klen == 2 && !strncmp(key_start, "id", 2)) {/* id hex hash string*/
+ 			pp = strdup(p + 1);
+ 			sr->e[JG2_PE_ID] = (const char *)pp;
+ 
+@@ -117,10 +163,10 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
+ 				pp++;
+ 			}
+ 		}
+-		if (p[-1] == 's') { /* ofs */
++		if (klen == 3 && !strncmp(key_start, "ofs", 3)) { /* ofs */
+ 			sr->offset = atoi(p + 1);
+ 		}
+-		if (p[-1] == 'q') {
++		if (klen == 1 && key_start[0] == 'q') {
+ 			pp =  strdup(p + 1);
+ 			sr->e[JG2_PE_SEARCH] = (const char *)pp;
+ 			while (*pp) {
+@@ -132,7 +178,8 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
+ 				pp++;
+ 			}
+ 		}
+-		p++;
++		/* advance p past the value for the next separator search */
++		p = p + 1;
+ 	}
+ 
+ 	return 0;
+@@ -463,11 +510,22 @@ void
+ signature_text(const git_signature *sig, struct jg2_ctx *ctx)
+ {
+ 	struct tm tm, *tmr;
+-	char dt[96];
++	char dt[96], n[128], e[128];
+ 
+ 	tmr = localtime_r((const time_t *)&sig->when.time, &tm);
+ 
+-	CTX_BUF_APPEND("Author: %s <%s>\n", sig->name, sig->email);
++	/*
++	 * sig->name and sig->email are attacker-controllable (commit author
++	 * fields).  The non-patch path escapes them via ellipsis_purify() in
++	 * name_email_json(); do the same here so a crafted identity cannot
++	 * inject arbitrary content into the patch output.
++	 */
++
++	CTX_BUF_APPEND("Author: %s <%s>\n",
++		       ellipsis_purify(n, sig->name ? sig->name : "unknown",
++				       sizeof(n)),
++		       ellipsis_purify(e, sig->email ? sig->email : "unknown",
++				       sizeof(e)));
+ 
+ 	if (tmr) {
+ 		/* like Date:   Mon Aug 13 16:49:58 2018 +0800 */
+diff --git a/src/protocol_avatar-proxy.c b/src/protocol_avatar-proxy.c
+index c785fd8..cd9659c 100644
+--- a/src/protocol_avatar-proxy.c
++++ b/src/protocol_avatar-proxy.c
+@@ -348,6 +348,24 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
+ 		if (!p[0] || !p[1])
+ 			return -1;
+ 
++		/*
++		 * The avatar cache only ever contains files named by their
++		 * 32-char MD5 hex digest (see mention() -> lws_snprintf in
++		 * this file, and lib/main.c md5_to_hex_cstr()).  The URL tail
++		 * we receive here is untrusted (lws does not normalize it), so
++		 * a request like "/git/avatar/../../etc/passwd" would otherwise
++		 * be assembled into "<cache_dir>/./../etc/passwd" and served
++		 * via lws_serve_http_file().  Reject anything that is not a
++		 * clean hex filename.
++		 */
++
++		if (strchr(p, '/') || strstr(p, "..")) {
++			lwsl_notice("%s: illegal avatar path \"%s\"\n",
++				    __func__, p);
++
++			return -1;
++		}
++
+ 		lws_snprintf(pss->path, sizeof(pss->path), "%s/%c/%c/%s",
+ 			     vhd->cache_dir, p[0], p[1], p);
+ 

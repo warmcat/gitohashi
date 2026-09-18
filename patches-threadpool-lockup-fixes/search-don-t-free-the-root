@@ -1,0 +1,60 @@
+search: don't free the root tree between walks, fixes F-013
+
+From: Andy Green <andy@warmcat.com>
+
+The extent walk ran git_tree_free() on every level it exhausted,
+including the root tree at stack[0] which is u.tree.  The index walk
+setup then re-stashed and dereferenced the freed pointer, surviving
+only because libgit2's object cache held a second reference (with a
+double-decref from job_search_destroy on top).  Skip the root free at
+extent-walk exhaustion so the stack keeps owning it exactly once.
+
+Also free subtree lookups on exhaustion in the index walk, which set
+the tree NULL without freeing and leaked one git_tree per directory.
+---
+ lib/job/search.c |   20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/lib/job/search.c b/lib/job/search.c
+index 2c16f4b..ceba0a2 100644
+--- a/lib/job/search.c
++++ b/lib/job/search.c
+@@ -413,12 +413,21 @@ job_search_start(struct jg2_ctx *ctx)
+ 
+ 			free(lev->path);
+ 			lev->path = NULL;
+-			if (lev->tree)
+-				git_tree_free(lev->tree);
+ 			/*
+ 			 * libgit2 docs say don't free lev->tree... it seems it
+ 			 * is cached and removed by lru inside libgit2
++			 * UPDATE: This is incorrect. lookup creates a strong
++			 * reference that must be freed to avoid catastrophic leaks.
++			 *
++			 * The root tree at stack[0] is u.tree, an owned
++			 * reference the index walk below re-stashes and
++			 * job_search_destroy() frees through the stack.  Don't
++			 * decref it here, or the index walk dereferences (and
++			 * destroy double-frees) a pointer that only stays
++			 * valid by grace of libgit2's object cache.
+ 			 */
++			if (ctx->sp && lev->tree)
++				git_tree_free(lev->tree);
+ 			lev->tree = NULL;
+ 			lev->index = 0;
+ 
+@@ -696,9 +705,12 @@ index:
+ 			free(lev->path);
+ 			lev->path = NULL;
+ 			/*
+-			 * libgit2 docs say don't free lev->tree... it seems it
+-			 * is cached and removed by lru inside libgit2
++			 * lookup creates a strong reference that must be freed
++			 * to avoid leaks... job_search_destroy() frees whatever
++			 * is still on the stack
+ 			 */
++			if (lev->tree)
++				git_tree_free(lev->tree);
+ 			lev->tree = NULL;
+ 			lev->index = 0;
+ 

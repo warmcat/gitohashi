@@ -1,0 +1,48 @@
+snapshot: free the libarchive writer in job_snapshot_destroy, fixes F-011
+
+From: Andy Green <andy@warmcat.com>
+
+Aborted snapshots (unauthenticated client closes the connection
+mid-download) destroyed the ctx without freeing ctx->a, leaking the
+archive writer including its gzip/bzip2/xz filter state per truncated
+download until the LimitAS OOM kill.  Free it in destroy like the
+completion path does, and NULL it on the error_out path so destroy
+can't double-free.
+---
+ lib/job/snapshot.c |   16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/lib/job/snapshot.c b/lib/job/snapshot.c
+index ffb4476..9c89fdd 100644
+--- a/lib/job/snapshot.c
++++ b/lib/job/snapshot.c
+@@ -334,6 +334,21 @@ job_snapshot_destroy(struct jg2_ctx *ctx)
+ 		ctx->u.obj = NULL;
+ 	}
+ 
++#if defined(JG2_HAVE_ARCHIVE_H)
++	/*
++	 * Aborted snapshots (client closed the connection mid-download)
++	 * arrive here with the archive writer and its filter state still
++	 * allocated... the completion and error_out paths already freed
++	 * and NULLed ctx->a, this catches the destroy path so repeated
++	 * truncated downloads can't leak it
++	 */
++	if (ctx->a) {
++		archive_write_close(ctx->a);
++		archive_write_free(ctx->a);
++		ctx->a = NULL;
++	}
++#endif
++
+ 	lwsac_free(&ctx->lwsac_head);
+ 
+ 	ctx->job = NULL;
+@@ -585,6 +600,7 @@ error_out:
+ 
+ 	archive_write_close(ctx->a);
+ 	archive_write_free(ctx->a);
++	ctx->a = NULL; /* job_snapshot_destroy checks for it */
+ 
+ 	ctx->final = 1;
+ 	job_snapshot_destroy(ctx);

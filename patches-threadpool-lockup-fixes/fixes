@@ -1,0 +1,21 @@
+fixes
+
+From: Andy Green <andy@warmcat.com>
+
+
+---
+ lib/conf/gitolite/common.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/lib/conf/gitolite/common.c b/lib/conf/gitolite/common.c
+index c151d3f..770c0c2 100644
+--- a/lib/conf/gitolite/common.c
++++ b/lib/conf/gitolite/common.c
+@@ -21,6 +21,7 @@
+ 
+ #include "../../private.h"
+ 
++#include <errno.h>
+ #include <string.h>
+ #include <fcntl.h>
+ #include <unistd.h>

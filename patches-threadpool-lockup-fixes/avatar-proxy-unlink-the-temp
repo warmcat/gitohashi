@@ -1,0 +1,88 @@
+avatar-proxy: unlink the temp on failed fetches, fixes F-004
+
+From: Andy Green <andy@warmcat.com>
+
+The nope: error path unlinked req->filepath, the final cache name that
+only exists after the COMPLETED rename, so it was a no-op against a
+nonexistent path; DROP_PROTOCOL cleaned up the fd and the req but never
+removed the temp either.  Every failed or aborted avatar fetch leaked a
+partial temp file in a dir with no sweeper.  Track whether the rename
+happened on the req and unlink the temp centrally from DROP_PROTOCOL
+when it didn't, covering the nope path, the rename-failure leg and
+connection drops alike.
+---
+ src/protocol_avatar-proxy.c |   38 ++++++++++++++++++++++++++++----------
+ 1 file changed, 28 insertions(+), 10 deletions(-)
+
+diff --git a/src/protocol_avatar-proxy.c b/src/protocol_avatar-proxy.c
+index cd9659c..f0586f3 100644
+--- a/src/protocol_avatar-proxy.c
++++ b/src/protocol_avatar-proxy.c
+@@ -53,7 +53,9 @@ struct req {
+ 	char filepath_temp[256];
+ 	char filepath[192];
+ 	char urlpath[128];
++	size_t got; /* bytes of provider response body streamed so far */
+ 	int fd;
++	char renamed; /* temp was renamed to the final cache name */
+ };
+ 
+ struct pss_avatar_proxy {
+@@ -454,6 +456,15 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
+ 		if (req->fd != -1)
+ 			close(req->fd);
+ 
++		/*
++		 * If the fetch failed partway, the temp file (if any) is
++		 * still lying around... the only other copy of the content
++		 * is the provider's.  Remove it here so failed fetches
++		 * can't litter the cache dir
++		 */
++		if (!req->renamed)
++			(void)unlink(req->filepath_temp);
++
+ 		pthread_mutex_lock(&vhd->lock); /* ================= vhd lock */
+ 		req->fd = -1;
+ 		lws_dll2_remove(&req->next);
+@@ -468,8 +479,13 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
+ 		lwsl_debug("LWS_CALLBACK_COMPLETED_CLIENT_HTTP %p\n", wsi);
+ 		req = (struct req *)user;
+ 		if (req && req->fd != -1) {
+-			if (rename(req->filepath_temp, req->filepath))
+-				return 0;
++			if (!rename(req->filepath_temp, req->filepath))
++				req->renamed = 1;
++			else
++				/* the rename failed... the temp remains for
++				 * DROP_PROTOCOL to unlink */
++				lwsl_notice("%s: rename to %s failed\n",
++					    __func__, req->filepath);
+ 		}
+ 		return 0;
+ 
+@@ -484,15 +500,17 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
+ 
+ 	return lws_callback_http_dummy(wsi, reason, user, in, len);
+ 
+-nope:
+-	if (req && req->fd != -1)
+-		(void)unlink(req->filepath);
+-	/*
+-	 * req will be freed + fd closed when the wsi drops
+-	 * the protocol
+-	 */
++	nope:
++		/*
++		 * the fetch failed partway... only the temp file exists at
++		 * this point (the rename to the final name happens at
++		 * COMPLETED), so remove that; DROP_PROTOCOL then closes,
++		 * unlists and frees the req
++		 */
++		if (req && !req->renamed)
++			(void)unlink(req->filepath_temp);
+ 
+-	return -1;
++		return -1;
+ }
+ 
+ #define LWS_PLUGIN_PROTOCOL_AVATAR_PROXY \

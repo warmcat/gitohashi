@@ -1,0 +1,42 @@
+snapshot: skip crafted . and .. tree entries, fixes F-015
+
+From: Andy Green <andy@warmcat.com>
+
+Archive member names were taken verbatim from tree entries, so a
+pusher using plumbing could plant directory entries named .. that
+accumulated into path-traversal members (tar-slip on extraction by
+tools that honor them literally).  Skip entries named . or .. during
+the walk, closing the crafted-object route.
+---
+ lib/job/snapshot.c |   18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/lib/job/snapshot.c b/lib/job/snapshot.c
+index 9c89fdd..66b7ee2 100644
+--- a/lib/job/snapshot.c
++++ b/lib/job/snapshot.c
+@@ -499,6 +499,24 @@ job_snapshot(struct jg2_ctx *ctx)
+ 			continue;
+ 		}
+ 
++		/*
++		 * Crafted tree objects (plumbing push without fsck) can name
++		 * entries "." or ".."; walked verbatim these accumulate into
++		 * archive members that escape the extraction dir (tar-slip).
++		 * Git clients refuse to create them, so just skip them.
++		 */
++		{
++			const char *ten = git_tree_entry_name(te);
++
++			if (!strcmp(ten, ".") || !strcmp(ten, "..")) {
++				lwsl_notice("%s: skipping hostile entry "
++					    "\"%s\" in snapshot walk\n",
++					    __func__, ten);
++
++				continue;
++			}
++		}
++
+ 		switch (git_tree_entry_type(te)) {
+ 
+ 		case GIT_OBJ_TREE:

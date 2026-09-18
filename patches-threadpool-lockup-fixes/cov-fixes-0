@@ -1,0 +1,89 @@
+cov-fixes
+
+From: Andy Green <andy@warmcat.com>
+
+
+---
+ lib/conf/gitolite/gitolite3.c |   11 +++++++++++
+ lib/job/blog.c                |   34 +++++++++++++++++++++++++---------
+ 2 files changed, 36 insertions(+), 9 deletions(-)
+
+diff --git a/lib/conf/gitolite/gitolite3.c b/lib/conf/gitolite/gitolite3.c
+index 82773cf..1a1c08d 100644
+--- a/lib/conf/gitolite/gitolite3.c
++++ b/lib/conf/gitolite/gitolite3.c
+@@ -415,6 +415,7 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
+ 			     const char *stdin_path, const char *output)
+ {
+ 	int ret = 0, res = -1, fd, fd1, n;
++	mode_t oumask;
+ 	struct gl3_query q;
+ 	char buf[512], temp[32];
+ 
+@@ -433,10 +434,20 @@ jg2_gitolite3_blocking_query(struct jg2_global *jg2_global, const char *query,
+ 	 * Use mkstemp() to get an unpredictable, O_EXCL-created temp file so
+ 	 * an attacker cannot pre-plant a symlink at a guessable /tmp name and
+ 	 * have us truncate its target.
++	 *
++	 * Set a restrictive umask around the mkstemp() as well so the temp
++	 * file cannot come into existence with any group / other access,
++	 * independently of what umask we were started under (CID 505651).
++	 * The window is a single syscall; file creation modes used elsewhere
++	 * in this process only lose group / other bits if they race with it.
+ 	 */
+ 
+ 	lws_snprintf(temp, sizeof(temp), "/tmp/_gl3qXXXXXX");
++
++	oumask = umask(0077);
+ 	fd = mkstemp(temp);
++	umask(oumask);
++
+ 	if (fd < 0) {
+ 		lwsl_err("%s: mkstemp failed: %s\n", __func__, strerror(errno));
+ 		ret = -4;
+diff --git a/lib/job/blog.c b/lib/job/blog.c
+index 22d53a8..834ab1d 100644
+--- a/lib/job/blog.c
++++ b/lib/job/blog.c
+@@ -321,16 +321,32 @@ job_blog(struct jg2_ctx *ctx)
+ 					/* We set capturing_summary = 2 to mean "done" so we don't restart */
+ 					capturing_summary = 2;
+ 				} else if (capturing_summary == 1 && summary_len < sizeof(summary) - 2) {
++					const char *q = p;
++					size_t off = summary_len;
+ 					size_t copy_len = len;
+-					if (summary_len + copy_len >= sizeof(summary) - 1)
+-						copy_len = sizeof(summary) - 1 - summary_len;
+-					
+-					if (summary_len > 0)
+-						summary[summary_len++] = '\n';
+-					
+-					memcpy(summary + summary_len, p, copy_len);
+-					summary_len += copy_len;
+-					summary[summary_len] = '\0';
++
++					/*
++					 * Append the line separator, then copy
++					 * as much of the line as fits, stopping
++					 * at the last byte of summary[] so that
++					 * it is always available for the
++					 * terminating NUL.  Every write into
++					 * summary[] is directly guarded by a
++					 * comparison against the constant
++					 * sizeof(summary) - 1, so both the
++					 * copies and the NUL stay provably
++					 * inside the array.
++					 */
++
++					if (off)
++						summary[off++] = '\n';
++
++					while (copy_len && off < sizeof(summary) - 1)
++						summary[off++] = *q++;
++
++					summary[off] = '\0';
++
++					summary_len = off;
+ 
+ 					if (len > 0 && p[0] != '#' &&
+ 					    !(len >= 2 && p[0] == '!' && p[1] == '[') &&

@@ -1,0 +1,59 @@
+threadpool: honor LWS_TP_STATUS_STOPPING in task_function
+
+From: Andy Green <andy@warmcat.com>
+
+task_function() ignored its status argument entirely.  The lws threadpool
+contract (see lib/misc/threadpool/README.md) is that a task is only ever
+told LWS_TP_STATUS_RUNNING or LWS_TP_STATUS_STOPPING, and STOPPING means
+"clean up and return LWS_TP_RETURN_STOPPED".
+
+For blame, a single jg2_ctx_fill() does the whole git_blame_file() plus
+all the per-hunk git_commit_lookup() work synchronously before returning
+(lib/job/blame.c, job_blame_lines()), with no check-in in between.  So a
+STOPPING request arriving because the bound wsi closed (crawler dropped
+the connection, or lws_threadpool_dequeue_task() asked us to stop) was
+invisible until the entire expensive call returned.
+
+Worse, once such a task finishes its fill it returns LWS_TP_RETURN_SYNC
+and the worker parks in lws_threadpool_worker_sync() waiting on a
+service-thread callback for a wsi that is already gone.  The worker then
+sits on its pool slot, looping through SYNC timeouts, for up to the
+~5 minute (100 x 3s) safety window.  Under a crawl, four blame tasks in
+this state pin all four pool slots and the pool deadlocks.
+
+Check the status at entry and bail out with STOPPED immediately when
+asked to stop, before any jg2_ctx_fill() work.  This collapses the
+lingering-in-SYNC path to a single cycle and lets the pool drain when
+connections go away.
+---
+ src/protocol_gitohashi.c |   17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/src/protocol_gitohashi.c b/src/protocol_gitohashi.c
+index 2059e98..d88af24 100644
+--- a/src/protocol_gitohashi.c
++++ b/src/protocol_gitohashi.c
+@@ -78,6 +78,23 @@ task_function(void *user, enum lws_threadpool_task_status s)
+ 	int n, flags = 0, opa;
+ 	char outlive = 0;
+ 
++	/*
++	 * If the wsi we are bound to went away (client closed the connection,
++	 * or the request was dequeued), the threadpool asks us to stop by
++	 * passing LWS_TP_STATUS_STOPPING.  We must honor it promptly and
++	 * return STOPPED, otherwise this worker stays pinned until the
++	 * (potentially very long) jg2_ctx_fill / git blame completes, and
++	 * worse, once we return SYNC the worker parks in the sync wait
++	 * dependent on a service thread that may never come for a wsi that
++	 * is already gone.
++	 *
++	 * See the lws threadpool README: a task is only ever told RUNNING or
++	 * STOPPING in the status argument, and STOPPING means clean up and
++	 * return LWS_TP_RETURN_STOPPED.
++	 */
++	if (s == LWS_TP_STATUS_STOPPING)
++		return LWS_TP_RETURN_STOPPED;
++
+ 	/*
+ 	 * first time, we must do the http reply, and either acquire the
+ 	 * jg2 ctx or finish the transaction

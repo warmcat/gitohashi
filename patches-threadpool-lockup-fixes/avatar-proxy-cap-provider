@@ -1,0 +1,178 @@
+avatar-proxy: cap provider bodies, check status, budget the cache dir, fixes F-003
+
+From: Andy Green <andy@warmcat.com>
+
+The avatar cache grew without bound: every distinct md5 created a
+permanent file, provider response bodies were streamed to disk uncapped,
+and error pages were cached as the avatar for the md5 forever.
+
+- Cap a single provider body at 1MiB (real avatars are a few KB), so a
+  hostile provider or a MITM on an http:// remote-base cannot outrun
+  the trim with one huge body.
+- Only cache 2xx responses... a 404/500 page no longer becomes the
+  permanent avatar for the identity.
+- Manage the cache dir with lws_diskcache (the same LRU the JSON cache
+  uses): prepare the <c>/<c> structure at INIT, set a byte budget via
+  the optional cache-size pvo, and trim oldest-first from a 1s sul,
+  bounding both file count and total bytes even in a dedicated
+  avatar cache dir.
+---
+ src/protocol_avatar-proxy.c |  115 ++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 112 insertions(+), 3 deletions(-)
+
+diff --git a/src/protocol_avatar-proxy.c b/src/protocol_avatar-proxy.c
+index d653200..c3d04f3 100644
+--- a/src/protocol_avatar-proxy.c
++++ b/src/protocol_avatar-proxy.c
+@@ -80,8 +80,46 @@ struct vhd_avatar_proxy {
+ 
+ 	struct lws_dll2_owner owner;
+ 	struct lws_dll2_owner owner_waiting;
++
++	/* size management of the cache dir */
++
++	struct lws_diskcache_scan *dcs;
++	lws_sorted_usec_list_t trim_sul;
++	uint64_t cache_size_limit;
+ };
+ 
++/*
++ * Cap on a single provider response body.  Real avatars are a few KB...
++ * this is generous, but stops a hostile provider (or a MITM on an
++ * http:// remote-base) filling the disk with one huge body faster than
++ * the trim can react.
++ */
++#define AVATAR_MAX_BODY (1 * 1024 * 1024)
++
++/*
++ * Ask the diskcache how we should pace the trim scans... this follows
++ * the pattern of libjsongit2's cache trim thread, but on a sul on the
++ * service thread since avatar caches are small
++ */
++static void
++avatar_trim_sul_cb(lws_sorted_usec_list_t *sul)
++{
++	struct vhd_avatar_proxy *vhd = lws_container_of(sul,
++					struct vhd_avatar_proxy, trim_sul);
++	int n, around = 1;
++
++	/* if we're over budget, scan faster */
++
++	if (!lws_diskcache_secs_to_idle(vhd->dcs))
++		around = 8;
++
++	for (n = 0; n < around; n++)
++		lws_diskcache_trim(vhd->dcs);
++
++	lws_sul_schedule(vhd->context, 0, &vhd->trim_sul, avatar_trim_sul_cb,
++			 LWS_USEC_PER_SEC);
++}
++
+ static const struct lws_protocols protocols[];
+ 
+ static int
+@@ -368,6 +406,43 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
+ 		 * dirs
+ 		 */
+ 
++		/*
++		 * The avatar cache grows one permanent file per distinct
++		 * md5 with nothing else bounding it.  Manage the dir with
++		 * the same diskcache LRU the JSON cache uses: prepare the
++		 * <c>/<c> dir structure, then trim it down to a byte budget
++		 * oldest-first from a 1s sul.  Optional "cache-size" pvo is
++		 * the budget in bytes (0 = lws' 256MiB default).
++		 */
++		{
++			const char *z;
++			uid_t uid;
++			gid_t gid;
++
++			if (!lws_pvo_get_str(in, "cache-size", &z))
++				vhd->cache_size_limit = (uint64_t)atoll(z);
++
++			/*
++			 * Prepare the <c>/<c> dir structure (no-op if it
++			 * already exists).  If a privilege-drop uid is
++			 * configured, hand the dirs to it; otherwise use
++			 * (uid_t)-1 so the chown is a silent no-op rather
++			 * than a wall of EPERM errors from an unprivileged
++			 * process
++			 */
++			lws_get_effective_uid_gid(vhd->context, &uid, &gid);
++			lws_diskcache_prepare(vhd->cache_dir, 0700,
++					      uid ? uid : (uid_t)-1);
++
++			vhd->dcs = lws_diskcache_create(vhd->cache_dir,
++							vhd->cache_size_limit);
++			if (!vhd->dcs)
++				return -1;
++
++			lws_sul_schedule(vhd->context, 0, &vhd->trim_sul,
++					 avatar_trim_sul_cb, LWS_USEC_PER_SEC);
++		}
++
+ 		{
+ 			pthread_mutexattr_t attr;
+ 
+@@ -381,7 +456,14 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
+ 		break;
+ 
+ 	case LWS_CALLBACK_PROTOCOL_DESTROY:
+-		pthread_mutex_destroy(&vhd->lock);
++		if (vhd) {
++			/* stop the trim sul or it fires on freed memory */
++			lws_sul_cancel(&vhd->trim_sul);
++			if (vhd->dcs)
++				lws_diskcache_destroy(&vhd->dcs);
++
++			pthread_mutex_destroy(&vhd->lock);
++		}
+ 		break;
+ 
+ 	/* --------------- http server --------------- */
+@@ -463,6 +545,22 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
+ 
+ 	case LWS_CALLBACK_ESTABLISHED_CLIENT_HTTP:
+ 		lwsl_debug("LWS_CALLBACK_ESTABLISHED_CLIENT_HTTP %p\n", wsi);
++
++		/*
++		 * The provider controls the response... a 404/500 page must
++		 * not become the permanent cached avatar for the md5, so
++		 * only cache 2xx bodies
++		 */
++		{
++			int resp = lws_http_client_http_response(wsi);
++
++			if (resp < 200 || resp > 299) {
++				lwsl_notice("%s: avatar fetch got HTTP %d, "
++					    "not caching\n", __func__, resp);
++				req = (struct req *)user;
++				goto nope;
++			}
++		}
+ 		return 0;
+ 
+ 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
+@@ -474,8 +572,19 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
+ 	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP_READ:
+ 		lwsl_debug("RECEIVE_CLIENT_HTTP_READ: read %d\n", (int)len);
+ 		req = (struct req *)user;
+-		if (req && write(req->fd, in, len) != (ssize_t)len)
+-			goto nope;
++		if (req) {
++			/* cap the provider body (see AVATAR_MAX_BODY) */
++			if (req->got + len > AVATAR_MAX_BODY) {
++				lwsl_notice("%s: avatar body exceeds %d bytes\n",
++					    __func__, AVATAR_MAX_BODY);
++				goto nope;
++			}
++
++			if (write(req->fd, in, len) != (ssize_t)len)
++				goto nope;
++
++			req->got += len;
++		}
+ 
+ 		return 0; /* don't passthru */
+ 

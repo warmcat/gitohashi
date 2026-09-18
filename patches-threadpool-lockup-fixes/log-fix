@@ -1,0 +1,44 @@
+log-fix
+
+From: Andy Green <andy@warmcat.com>
+
+
+---
+ lib/conf/gitolite/common.c |    1 +
+ lib/util.c                 |    4 ++--
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/lib/conf/gitolite/common.c b/lib/conf/gitolite/common.c
+index c151d3f..0fdadc1 100644
+--- a/lib/conf/gitolite/common.c
++++ b/lib/conf/gitolite/common.c
+@@ -22,6 +22,7 @@
+ #include "../../private.h"
+ 
+ #include <string.h>
++#include <errno.h>
+ #include <fcntl.h>
+ #include <unistd.h>
+ #include <sys/types.h>
+diff --git a/lib/util.c b/lib/util.c
+index 4faef0f..367c2b6 100644
+--- a/lib/util.c
++++ b/lib/util.c
+@@ -151,7 +151,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
+ 			// lwsl_err("%s: branch seen as %s\n", __func__, sr->e[JG2_PE_BRANCH]);
+ 
+ 		}
+-		if (klen == 1 && key_start[0] == 'd') {/* id hex hash string*/
++		if (klen == 2 && !strncmp(key_start, "id", 2)) {/* id hex hash string*/
+ 			pp = strdup(p + 1);
+ 			sr->e[JG2_PE_ID] = (const char *)pp;
+ 
+@@ -163,7 +163,7 @@ jg2_repopath_split(const char *urlpath, struct jg2_split_repopath *sr)
+ 				pp++;
+ 			}
+ 		}
+-		if (klen == 1 && key_start[0] == 's') { /* ofs */
++		if (klen == 3 && !strncmp(key_start, "ofs", 3)) { /* ofs */
+ 			sr->offset = atoi(p + 1);
+ 		}
+ 		if (klen == 1 && key_start[0] == 'q') {

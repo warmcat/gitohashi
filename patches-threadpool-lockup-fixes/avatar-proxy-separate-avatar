@@ -1,0 +1,122 @@
+avatar-proxy: separate avatar cache dir, serve only _avatar names, fixes F-007
+
+From: Andy Green <andy@warmcat.com>
+
+The shipped example conf pointed the avatar-proxy cache-dir at the
+gitohashi JSON cache-base.  Since the avatar mount is unauthenticated
+and serves <cache-dir>/<c>/<c>/<tail> for any clean-looking tail, raw
+JSON cache entries (shape-identical names) were fetchable through it,
+and repo-affiliated cache keys are unsalted and vhost-independent, so
+a repo public on one vhost had its private-on-another-vhost views
+computable cross-vhost.
+
+- Give the avatar cache its own dir in both example confs and document
+  that it must not equal cache-base.  The dir structure is prepared by
+  avatar-proxy itself at INIT now (F-003).
+- Pin the mount to the exact avatar filename shape, 32 hex chars +
+  "_avatar", the only names it creates, so nothing else in a
+  misconfigured shared dir is servable.
+---
+ etc-gitohashi/conf.d/localhost |   11 ++++++++---
+ etc-gitohashi/conf.d/unixskt   |   11 ++++++++---
+ src/protocol_avatar-proxy.c    |   40 +++++++++++++++++++++++++++++-----------
+ 3 files changed, 45 insertions(+), 17 deletions(-)
+
+diff --git a/etc-gitohashi/conf.d/localhost b/etc-gitohashi/conf.d/localhost
+index 71095be..fc1196e 100644
+--- a/etc-gitohashi/conf.d/localhost
++++ b/etc-gitohashi/conf.d/localhost
+@@ -131,9 +131,14 @@
+ 		"avatar-proxy": {
+ 			"remote-base": "https://www.gravatar.com/avatar/",
+ 			#
+-			# this dir is served via avatar-proxy
+-			#
+-			"cache-dir": "/var/cache/libjsongit2"
++			# this dir is served via the avatar-proxy mount WITHOUT
++			# any ACL checks, so it must NOT be the same dir as the
++			# gitohashi "cache-base" above: sharing them would let
++			# unauthenticated clients fetch raw JSON cache entries
++			# (and defeat per-vhost repo ACLs for repos that are
++			# public on some other vhost sharing the dir)
++			#
++			"cache-dir": "/var/cache/gitohashi-avatar"
+ 		}}
+ 		]
+ 		}
+diff --git a/etc-gitohashi/conf.d/unixskt b/etc-gitohashi/conf.d/unixskt
+index 9a59c1d..eeb6ab0 100644
+--- a/etc-gitohashi/conf.d/unixskt
++++ b/etc-gitohashi/conf.d/unixskt
+@@ -115,9 +115,14 @@
+ 		"avatar-proxy": {
+ 			"remote-base": "https://www.gravatar.com/avatar/",
+ 			#
+-			# this dir is served via avatar-proxy
+-			#
+-			"cache-dir": "/var/cache/libjsongit2"
++			# this dir is served via the avatar-proxy mount WITHOUT
++			# any ACL checks, so it must NOT be the same dir as the
++			# gitohashi "cache-base" above: sharing them would let
++			# unauthenticated clients fetch raw JSON cache entries
++			# (and defeat per-vhost repo ACLs for repos that are
++			# public on some other vhost sharing the dir)
++			#
++			"cache-dir": "/var/cache/gitohashi-avatar"
+ 		}
+ 	}
+ 	]
+diff --git a/src/protocol_avatar-proxy.c b/src/protocol_avatar-proxy.c
+index c3d04f3..b9edd1f 100644
+--- a/src/protocol_avatar-proxy.c
++++ b/src/protocol_avatar-proxy.c
+@@ -479,20 +479,38 @@ callback_avatar_proxy(struct lws *wsi, enum lws_callback_reasons reason,
+ 
+ 		/*
+ 		 * The avatar cache only ever contains files named by their
+-		 * 32-char MD5 hex digest (see mention() -> lws_snprintf in
+-		 * this file, and lib/main.c md5_to_hex_cstr()).  The URL tail
+-		 * we receive here is untrusted (lws does not normalize it), so
+-		 * a request like "/git/avatar/../../etc/passwd" would otherwise
+-		 * be assembled into "<cache_dir>/./../etc/passwd" and served
+-		 * via lws_serve_http_file().  Reject anything that is not a
+-		 * clean hex filename.
++		 * 32-char MD5 hex digest plus "_avatar" (see mention() ->
++		 * lws_snprintf in this file, and lib/main.c
++		 * md5_to_hex_cstr()).  The URL tail we receive here is
++		 * untrusted (lws does not normalize it), so a request like
++		 * "/git/avatar/../../etc/passwd" would otherwise be assembled
++		 * into "<cache_dir>/./../etc/passwd" and served via
++		 * lws_serve_http_file().
++		 *
++		 * Accept only the exact avatar filename shape.  This also
++		 * prevents the mount serving anything else that might live in
++		 * a misconfigured shared cache dir, eg raw JSON cache entries
++		 * (shape-identical <32hex>-suffix names) if cache-dir is
++		 * pointed at the gitohashi cache-base.
+ 		 */
++		{
++			size_t tl = strlen(p), n;
+ 
+-		if (strchr(p, '/') || strstr(p, "..")) {
+-			lwsl_notice("%s: illegal avatar path \"%s\"\n",
+-				    __func__, p);
++			if (tl != 32 + 7 || strncmp(p + 32, "_avatar", 7)) {
++				lwsl_notice("%s: illegal avatar path \"%s\"\n",
++					    __func__, p);
+ 
+-			return -1;
++				return -1;
++			}
++
++			for (n = 0; n < 32; n++)
++				if ((p[n] < '0' || p[n] > '9') &&
++				    (p[n] < 'a' || p[n] > 'f')) {
++					lwsl_notice("%s: illegal avatar path "
++						    "\"%s\"\n", __func__, p);
++
++					return -1;
++				}
+ 		}
+ 
+ 		lws_snprintf(pss->path, sizeof(pss->path), "%s/%c/%c/%s",

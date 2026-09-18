@@ -1,0 +1,35 @@
+search: free the unlinked ongoing_index in remove_ongoing, fixes F-012
+
+From: Andy Green <andy@warmcat.com>
+
+remove_ongoing() nulled ctx->ongoing before free(), so it always
+freed NULL and leaked the ~48-byte ongoing_index on every completed
+or aborted trie index build.  Keep the unlinked node in a local and
+free that.
+---
+ lib/job/search.c |    9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/lib/job/search.c b/lib/job/search.c
+index b8cc73e..2c16f4b 100644
+--- a/lib/job/search.c
++++ b/lib/job/search.c
+@@ -45,13 +45,14 @@ remove_ongoing(struct jg2_ctx *ctx)
+ 	pthread_mutex_lock(&ctx->vhost->lock); /* ======== vhost lock */
+ 
+ 	if (ctx->ongoing) {
++		struct ongoing_index *o = ctx->ongoing;
++
+ 		pon = &ctx->jrepo->indexing_list;
+ 		while (*pon) {
+-			if (*pon == ctx->ongoing) {
+-				*pon = ctx->ongoing->next;
+-				lwsl_err("---------- ongoing free %p\n", ctx->ongoing);
++			if (*pon == o) {
++				*pon = o->next;
+ 				ctx->ongoing = NULL;
+-				free(ctx->ongoing);
++				free(o);
+ 				break;
+ 			}
+ 			pon = &(*pon)->next;

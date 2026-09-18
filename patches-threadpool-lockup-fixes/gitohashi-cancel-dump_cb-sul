@@ -1,0 +1,29 @@
+gitohashi: cancel dump_cb sul at PROTOCOL_DESTROY, fixes F-002
+
+From: Andy Green <andy@warmcat.com>
+
+The 1s dump_cb reschedule was never cancelled when the protocol
+instance was destroyed; a vhost destroyed while its context keeps
+servicing (plugin embedding case) would fire the sul on freed vhd
+memory and keep rescheduling.  Cancel it first thing at destroy.
+---
+ src/protocol_gitohashi.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/protocol_gitohashi.c b/src/protocol_gitohashi.c
+index a200401..619ecbc 100644
+--- a/src/protocol_gitohashi.c
++++ b/src/protocol_gitohashi.c
+@@ -455,6 +455,12 @@ callback_gitohashi(struct lws *wsi, enum lws_callback_reasons reason,
+ 			lwsl_err("%s: NULL vhd\n", __func__);
+ 			break;;
+ 		}
++		/*
++		 * the vhd is going away with the vhost... stop the 1s
++		 * dump_cb reschedule cycle or it will fire on freed memory
++		 * if the context outlives the vhost (plugin case)
++		 */
++		lws_sul_cancel(&vhd->sul);
+ 		/*
+ 		 * A worker still inside jg2_ctx_fill() is walking
+ 		 * ctx->vhost, and the threadpool done-queue reap destroys
